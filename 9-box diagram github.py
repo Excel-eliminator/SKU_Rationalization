@@ -43,7 +43,7 @@ def load_9box_data(file_path):
         if 'Remark2' not in df_combined.columns:
             df_combined['Remark2'] = ''
 
-        # Pastikan kolom kunci dibaca sebagai string agar tidak ter-SUM/berubah jadi notasi ilmiah
+        # Ensure key columns are read as strings to prevent scientific notation formatting
         text_cols = ['SKU', 'Produk_Key', 'Product Name', 'New Code', 'New Product Name', 'Remark', 'Remark2', 'Status',
                      'Country']
         for col in text_cols:
@@ -53,7 +53,7 @@ def load_9box_data(file_path):
                     ['nan', 'NaN', 'None'], '')
 
         # --- GLOBAL FALLBACK MAPPING ---
-        # Menghindari bug SKU kosong tergumpal jadi 1 Pseudo-SKU saat proses konsolidasi
+        # Prevents empty SKUs from clumping into a single Pseudo-SKU during consolidation
         if 'New Code' in df_combined.columns:
             fallback_code = df_combined['Produk_Key'] if 'Produk_Key' in df_combined.columns else df_combined['SKU']
             df_combined['New Code'] = df_combined['New Code'].replace([r'^\s*$', 'nan', 'NaN', 'None', 'UNKNOWN'],
@@ -66,7 +66,7 @@ def load_9box_data(file_path):
                 [r'^\s*$', 'nan', 'NaN', 'None', 'UNKNOWN'], np.nan, regex=True)
             df_combined['New Product Name'] = df_combined['New Product Name'].fillna(fallback_name).astype(str)
 
-        # RUMUS GROSS MARGIN (Sesuai kesepakatan Rule Mapping murni)
+        # GROSS MARGIN FORMULA (Based on agreed pure mapping rule)
         if all(col in df_combined.columns for col in
                ['Gross Sales (Current)', 'Return (Current)', 'COGS_Regular (Current)', 'Royalty (Current)']):
             df_combined['Gross Margin (Current)'] = (
@@ -79,7 +79,7 @@ def load_9box_data(file_path):
             df_combined['Gross Margin (%)'] = np.where(
                 (df_combined['Gross Sales (Current)'] + df_combined['Return (Current)']) != 0,
                 (df_combined['Gross Margin (Current)'] / (
-                            df_combined['Gross Sales (Current)'] + df_combined['Return (Current)'])) * 100,
+                        df_combined['Gross Sales (Current)'] + df_combined['Return (Current)'])) * 100,
                 0.0
             )
 
@@ -394,11 +394,11 @@ def main():
     # ---------------------------------------------------------
     # FILE UPLOADER
     # ---------------------------------------------------------
-    st.markdown("### 📂 Upload Data Sumber")
+    st.markdown("### 📂 Upload Source Data")
     st.info(
-        "Silakan unggah file Excel **Data 9-box** (misal: Data 9-box CM.xlsx) dari komputer Anda untuk memulai analisis.")
+        "Please upload the **9-Box Data Excel file** (e.g., Data 9-box CM.xlsx) from your local computer to initiate the analysis.")
 
-    uploaded_file = st.file_uploader("Unggah File Data 9-Box (.xlsx)", type=["xlsx"])
+    uploaded_file = st.file_uploader("Upload 9-Box Data File (.xlsx)", type=["xlsx"])
 
     if uploaded_file is None:
         st.stop()
@@ -407,7 +407,7 @@ def main():
 
     if df_raw.empty:
         st.warning(
-            "⚠️ File tidak dapat dibaca atau formatnya salah. Pastikan file memiliki sheet 'LOCAL' dan 'EXPORT'.")
+            "⚠️ File cannot be read or has an incorrect format. Ensure the file contains 'LOCAL' and 'EXPORT' sheets.")
         st.stop()
 
     df_main = df_raw.copy()
@@ -523,7 +523,7 @@ def main():
             x_axis_selector = st.selectbox(
                 "X-Axis Metric (Performance):",
                 ["Gross Sales (Current)", "Qty Growth (%)"],
-                help="Pilih 'Gross Sales (Current)' untuk nominal absolut, atau 'Qty Growth (%)' untuk melihat pertumbuhan."
+                help="Select 'Gross Sales (Current)' for absolute nominals, or 'Qty Growth (%)' to view growth rates."
             )
 
         col4, col5, col6, col7 = st.columns(4)
@@ -596,20 +596,20 @@ def main():
         col_out1, col_out2 = st.columns(2)
         with col_out1:
             min_outlier_limit_x = st.number_input(
-                f"Batas MINIMAL {x_axis_selector} untuk Rata-rata (Scope-out Long-tail):",
+                f"MINIMUM {x_axis_selector} Limit for Average Calculation (Scope-out Long-tail):",
                 value=0.0,
                 step=1000000.0 if x_axis_selector == "Gross Sales (Current)" else 1.0,
-                help="SKU di Bawah batas ini TETAP TAMPIL, tapi TIDAK DIAJAK menghitung nilai Rata-rata (Center) Sumbu X."
+                help="SKUs below this limit remain VISIBLE, but are EXCLUDED from calculating the X-Axis Average (Center) line."
             )
 
         with col_out2:
             scale_factor_x = st.number_input(
-                f"Skala Visual Box Kanan (Multiplier X-Axis):",
+                f"Right Box Visual Scale (X-Axis Multiplier):",
                 value=0.2,
                 step=0.1,
                 min_value=0.001,
                 max_value=10.0,
-                help="Set ke 1.0 untuk melihat grafik asli (bisa gepeng jika ada outlier). Set < 1.0 (misal 0.2 atau 0.1) untuk mengecilkan visual box kanan (B7,8,9) agar box kiri dan tengah mendapat porsi ruang layar lebih luas tanpa menyembunyikan SKU apa pun."
+                help="Set to 1.0 to view the original scale (may look compressed if outliers exist). Set < 1.0 (e.g., 0.2 or 0.1) to shrink the right-side boxes (B7, B8, B9) so the left and middle boxes get more screen space without hiding any SKUs."
             )
 
         if not filtered_df.empty:
@@ -665,7 +665,7 @@ def main():
 
         with st.form("threshold_form"):
             st.info(
-                "💡 **INFO:** Sumbu X dan Y menggunakan nilai Rata-Rata sebagai titik tengah mutlak. Garis Rata-rata ditandai dengan warna Merah. Garis Threshold Atas dan Bawah otomatis disesuaikan secara simetris terhadap Rata-rata.")
+                "💡 **INFO:** The X and Y axes use the Average value as the absolute center point. The Average lines are marked in Red. Upper and Lower Threshold lines automatically adjust symmetrically against the Average.")
 
             parent_view_mode = "Common" if view_mode in ["Common (Consolidated Master SKUs)",
                                                          "Commonized Only (Master C- Prefix SKUs)"] else "Uncommon"
@@ -875,7 +875,8 @@ def main():
                     fig.add_annotation(
                         x=coords['x'],
                         y=coords['y'],
-                        ax=mapped_x_high + (mapped_plot_x_max - mapped_x_high) * 0.05 if is_b5 else None,
+                        ax=mapped_x_high + (
+                                mapped_plot_x_max - mapped_x_high) * 0.05 if is_b5 else None,
                         ay=mid_y_low if is_b5 else None,
                         axref="x" if is_b5 else None,
                         ayref="y" if is_b5 else None,
@@ -958,7 +959,7 @@ def main():
             st.markdown("---")
             col_hdr1, col_hdr2, col_hdr3, col_hdr4 = st.columns([1.5, 1, 1, 1])
             with col_hdr1:
-                st.subheader("📋 Data Detail & Export")
+                st.subheader("📋 Data Details & Export")
 
             display_df = filtered_df.drop(columns=['Bubble_Size', 'X_Plot', 'Y_Plot', 'Plot_Color_Category'],
                                           errors='ignore')
@@ -1044,14 +1045,14 @@ def main():
                     "Market Focus:",
                     ["ALL (Local + Export)", "LOCAL", "EXPORT"],
                     key="pareto_market",
-                    help="Saring hasil Pareto berdasarkan Market."
+                    help="Filter Pareto results based on Market."
                 )
 
             with col_p3:
                 chart_margin_label = st.selectbox(
-                    "Pilih Metric untuk Grafik:",
+                    "Select Chart Metric:",
                     ["Gross Sales", "Gross Profit", "Gross Margin", "Contribution Margin"],
-                    help="SKU diurutkan dari yang paling besar ke paling kecil berdasarkan metric ini."
+                    help="SKUs are sorted in descending order based on this metric."
                 )
 
             with col_p4:
@@ -1060,7 +1061,7 @@ def main():
                     "Filter 9-Box Position:",
                     pareto_box_options,
                     default=["ALL"],
-                    help="Pilih kuadran spesifik untuk membatasi populasi yang masuk ke dalam Pareto."
+                    help="Select specific quadrants to limit the population included in the Pareto analysis."
                 )
 
             with col_p5:
@@ -1070,10 +1071,10 @@ def main():
                     max_value=100.0,
                     value=80.0,
                     step=1.0,
-                    help="Dihitung dari total populasi GLOBAL. Setelah mendapatkan Top %, baru di-slice sesuai pilihan Market Focus."
+                    help="Calculated from the total GLOBAL population. After securing the Top %, the data is sliced according to the Market Focus selection."
                 )
 
-            # --- LOGIKA PARETO: KONSISTENSI DATA (POST-FILTERING) ---
+            # --- PARETO LOGIC: CONSISTENCY DATA (POST-FILTERING) ---
             df_for_pareto_base = filtered_df.copy()
 
             chart_margin_map = {
@@ -1106,9 +1107,6 @@ def main():
 
                 top_global_skus = df_pareto_global.iloc[:cutoff_count_global][name_col].tolist()
 
-                # INI PENTING UNTUK INJEKSI P&L NANTI (Master SKU)
-                st.session_state['pareto_master_survivors'] = top_global_skus
-
                 df_sliced = df_for_pareto_base.copy()
 
                 if pareto_market_filter != "ALL (Local + Export)":
@@ -1126,10 +1124,10 @@ def main():
                 base_sliced_qty = df_sliced[
                     'Qty (Current)'].sum() if 'Qty (Current)' in df_sliced.columns else 0
 
-                # Hanya ambil data hasil slicer yang JUGA merupakan anggota Top Global SKUs
+                # Only retrieve data from slicer results that belong to Top Global SKUs
                 df_pareto_raw_filtered = df_sliced[df_sliced[name_col].isin(top_global_skus)].copy()
 
-                # 3. GROUPING FINAL UNTUK DISPLAY
+                # 3. FINAL GROUPING FOR DISPLAY
                 df_pareto_filtered = df_pareto_raw_filtered.groupby(name_col)[agg_cols].sum().reset_index()
                 df_pareto_filtered = df_pareto_filtered.sort_values(by=chart_margin_col, ascending=False).reset_index(
                     drop=True)
@@ -1170,16 +1168,16 @@ def main():
                     m1, m2, m3 = st.columns(3)
 
                     if pareto_market_filter == "ALL (Local + Export)" and "ALL" in pareto_box_filter:
-                        txt_sku = f"↑ {pareto_threshold:.1f}% dari {total_all_skus_global:,} SKU Global"
+                        txt_sku = f"↑ {pareto_threshold:.1f}% from {total_all_skus_global:,} Global SKUs"
                     else:
-                        txt_sku = f"↑ {summary_sku:,} Sliced SKU (dari {cutoff_count_global:,} Top Global)"
+                        txt_sku = f"↑ {summary_sku:,} Sliced SKUs (from {cutoff_count_global:,} Top Global)"
 
-                    m1.metric("Jumlah SKU", f"{summary_sku:,}", txt_sku)
-                    m2.metric("Quantity", f"{summary_qty:,.0f} ({pct_qty:.1f}%)", f"↑ {pct_qty:.1f}% dari total slice")
+                    m1.metric("Total SKUs", f"{summary_sku:,}", txt_sku)
+                    m2.metric("Quantity", f"{summary_qty:,.0f} ({pct_qty:.1f}%)", f"↑ {pct_qty:.1f}% from total slice")
 
                     summary_sales_bn = summary_sales / 1e9
-                    m3.metric("Gross Sales", f"Rp {summary_sales_bn:,.1f} M ({pct_sales:.1f}%)",
-                              f"↑ {pct_sales:.1f}% dari total slice")
+                    m3.metric("Gross Sales", f"Rp {summary_sales_bn:,.1f} Bn ({pct_sales:.1f}%)",
+                              f"↑ {pct_sales:.1f}% from total slice")
 
                     margin_label_map = {
                         'Gross Profit (Current)': 'Gross Profit',
@@ -1199,11 +1197,11 @@ def main():
                         margin_ratio_pct = (margin_sum / summary_sales * 100) if summary_sales > 0 else 0
                         label = margin_label_map[margin_col]
                         if margin_col == chart_margin_col:
-                            label = f"📊 {label} (di Grafik)"
+                            label = f"📊 {label} (in Chart)"
                         margin_sum_bn = margin_sum / 1e9
                         col_widget.metric(
                             label,
-                            f"Rp {margin_sum_bn:,.1f} M ({cumulative_pct:.1f}%)",
+                            f"Rp {margin_sum_bn:,.1f} Bn ({cumulative_pct:.1f}%)",
                             f"{margin_ratio_pct:.1f}% margin ratio"
                         )
 
@@ -1242,7 +1240,7 @@ def main():
                     ))
 
                     fig_pareto.update_layout(
-                        title=f"Pareto Chart: {chart_margin_label} (Slice dari Top {pareto_threshold}% Global | {total_pareto_skus} SKUs)",
+                        title=f"Pareto Chart: {chart_margin_label} (Sliced from Top {pareto_threshold}% Global | {total_pareto_skus} SKUs)",
                         hovermode="x unified",
                         height=550,
                         xaxis=dict(showticklabels=False, title=f"SKUs (Ranked by {chart_margin_label})"),
@@ -1258,7 +1256,7 @@ def main():
 
                     st.plotly_chart(fig_pareto, use_container_width=True)
 
-                    # --- TOMBOL EXPORT GANDA KHUSUS MODE COMMON ---
+                    # --- DUAL EXPORT BUTTONS FOR COMMON MODE ---
                     col_pt_dl1, col_pt_dl2 = st.columns(2)
 
                     # 1. Download Master SKU Pareto (As is)
@@ -1268,7 +1266,7 @@ def main():
 
                     with col_pt_dl1:
                         st.download_button(
-                            label=f"📥 Download Top {pareto_threshold}% Master SKU (Excel)",
+                            label=f"📥 Download Top {pareto_threshold}% Master SKUs (Excel)",
                             data=buffer_excel_pareto.getvalue(),
                             file_name=f"Pareto_Analysis_{chart_margin_label.replace(' ', '_')}_{pareto_threshold}pctSKU.xlsx",
                             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -1276,7 +1274,7 @@ def main():
                             use_container_width=True
                         )
 
-                    # 2. Download Exploded Granular Pareto (Tarik Raw Data agar Murni)
+                    # 2. Download Exploded Granular Pareto (Pulling Raw Data for Pure Numbers)
                     if view_mode in ["Common (Consolidated Master SKUs)", "Commonized Only (Master C- Prefix SKUs)"]:
                         pareto_master_skus = df_pareto_filtered[name_col].tolist()
 
@@ -1308,7 +1306,7 @@ def main():
 
                         with col_pt_dl2:
                             st.download_button(
-                                label=f"📥 Download Top {pareto_threshold}% by Old Produk_Key (Excel)",
+                                label=f"📥 Download Top {pareto_threshold}% by Old Product_Key (Excel)",
                                 data=buffer_excel_exploded.getvalue(),
                                 file_name=f"Pareto_Granular_OldKeys_{chart_margin_label.replace(' ', '_')}_{pareto_threshold}pct.xlsx",
                                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -1330,9 +1328,9 @@ def main():
                     )
 
                     st.markdown("---")
-                    st.subheader(f"🧩 9-Box Summary untuk Top {pareto_threshold}% Pareto SKUs")
+                    st.subheader(f"🧩 9-Box Summary for Top {pareto_threshold}% Pareto SKUs")
                     st.info(
-                        "Visualisasi di bawah ini (Matrix Grid & Bubble Chart) menunjukkan sebaran 9-box khusus untuk SKU yang masuk dalam filter Pareto di atas.")
+                        "The visualizations below (Matrix Grid & Bubble Chart) display the 9-box distribution exclusively for the SKUs included in the Pareto filter above.")
 
                     pareto_sku_list = df_pareto_filtered[name_col].tolist()
                     df_pareto_9box = df_pareto_raw_filtered.copy()
@@ -1366,7 +1364,7 @@ def main():
                             with col_dl_mat2:
                                 excel_pareto_9box = get_raw_excel(df_pareto_9box)
                                 st.download_button(
-                                    label=f"📥 Download Data 9-Box Top {pareto_threshold}% (Excel)",
+                                    label=f"📥 Download 9-Box Data for Top {pareto_threshold}% (Excel)",
                                     data=excel_pareto_9box,
                                     file_name=f"Pareto_9Box_Top{pareto_threshold}_{chart_margin_label.replace(' ', '')}.xlsx",
                                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -1523,7 +1521,7 @@ def main():
                                 type="secondary"
                             )
                     else:
-                        st.warning("Tidak ada data yang valid untuk dirender ke dalam 9-Box Diagram.")
+                        st.warning("No valid data available to render the 9-Box Diagram.")
 
                 else:
                     st.warning(f"No data found for {chart_margin_label} to generate a Pareto Chart.")
@@ -1536,7 +1534,7 @@ def main():
     with tab_b3_intersection:
         st.markdown("### 📊 Strategic Portfolio Intersection (4-Set Venn Analysis)")
         st.info(
-            "💡 **Executive Infographic (4-Leaf Clover):** Temukan irisan presisi dari 4 Kriteria Utama. Pilih **'None'** jika ingin mengecualikan/mematikan salah satu lingkaran dari analisa irisan.")
+            "💡 **Executive Infographic (4-Leaf Clover):** Discover precise intersections of the 4 Main Criteria. Select **'None'** to exclude a circle from the intersection analysis.")
 
         with st.form("venn_settings_form"):
             st.markdown("#### 🎯 Global & Venn Filters")
@@ -1544,7 +1542,7 @@ def main():
             col_g1, col_g2, col_g3 = st.columns(3)
             with col_g1:
                 v_market = st.selectbox("Global Filter: Market Focus", ["ALL", "LOCAL", "EXPORT"],
-                                        help="Saring populasi awal berdasarkan Market.", key="venn_market")
+                                        help="Filter the initial population based on Market.", key="venn_market")
             with col_g2:
                 v_margin_selector = st.selectbox("Y-Axis Metric (Margin):",
                                                  ["Gross Profit", "Gross Margin", "Contribution Margin"],
@@ -1557,7 +1555,7 @@ def main():
 
             with col_v1:
                 v_newcode = st.selectbox("Set A: Commonization", ["ALL", "None", "Commonized SKU", "Others"],
-                                         help="Tipe SKU berdasarkan awalan 'C-'")
+                                         help="SKU Type based on 'C-' prefix.")
 
             with col_v2:
                 if 'Remark' in df_main.columns:
@@ -1583,7 +1581,7 @@ def main():
 
             run_venn = st.form_submit_button("▶ GENERATE 4-LEAF CLOVER INFOGRAPHIC", type="primary")
 
-        # --- LOGIKA FILTER VENN ---
+        # --- VENN FILTER LOGIC ---
         df_v = df_main.copy()
         if v_market != "ALL":
             df_v = df_v[df_v['Source_Sheet'] == v_market]
@@ -1670,7 +1668,7 @@ def main():
                 if "ALL" not in v_box and len(v_box) > 0:
                     setD = df_v['Venn_Box'].isin(v_box)
 
-            # --- MENGHITUNG MASK IRISAN (V1 - V15) ---
+            # --- INTERSECTION MASKS (V1 - V15) ---
             m_A_only = setA & ~setB & ~setC & ~setD
             m_B_only = ~setA & setB & ~setC & ~setD
             m_C_only = ~setA & ~setB & setC & ~setD
@@ -1699,7 +1697,7 @@ def main():
             st.markdown("---")
             st.markdown("#### 🎯 4-Leaf Clover Venn Diagram Infographic")
 
-            # GAMBAR 4-LEAF CLOVER VENN (REVERT KE ELIPS/LINGKARAN)
+            # VENN RENDERING (ELLIPSE/CIRCLES)
             fig_venn = go.Figure()
 
             # Dynamic Transparent Colors Logic
@@ -1715,7 +1713,7 @@ def main():
             c_D_fill = "rgba(0,0,0,0)" if "None" in v_box else "rgba(22, 163, 74, 0.3)"
             c_D_line = "rgba(0,0,0,0)" if "None" in v_box else "#16a34a"
 
-            # Circles Rendering (membentuk Elips visual)
+            # Circles Rendering
             fig_venn.add_shape(type="circle", x0=1.5, y0=3.5, x1=6.5, y1=8.5, fillcolor=c_A_fill, line_color=c_A_line,
                                line_width=3)
             fig_venn.add_shape(type="circle", x0=3.5, y0=3.5, x1=8.5, y1=8.5, fillcolor=c_B_fill, line_color=c_B_line,
@@ -1778,7 +1776,7 @@ def main():
                                         text=f"<span style='color:red;'><b>V15<br>(BULLSEYE)</b></span><br>{bullseye_label.replace('<b></b><br>', '')}",
                                         showarrow=False, font=dict(size=13, color="black"))
 
-            # MENGATASI AREA V6 & V9 YANG TERTUMPUK: Menggunakan Garis Penunjuk (Arrow)
+            # FIX FOR OVERLAPPING V6 & V9 AREAS: Using Pointer Lines
             v6_text = get_venn_label("V6", m_AC_only)
             if v6_text != "":
                 fig_venn.add_annotation(
@@ -1801,11 +1799,11 @@ def main():
 
             st.plotly_chart(fig_venn, use_container_width=True)
             st.caption(
-                "*Catatan Visual: Irisan diagonal V6 (A∩C) dan V9 (B∩D) yang letaknya tersembunyi secara geometri kini ditunjukkan secara presisi menggunakan garis panah ke titik pusat, sehingga jumlah keseluruhan SKU pada grafik dipastikan 100% sama dengan perhitungan manual Anda.*")
+                "*Visual Note: The diagonal intersections V6 (A∩C) and V9 (B∩D), which are geometrically hidden, are now precisely indicated using pointer lines to the center, ensuring the total SKU count on the chart represents exactly 100% of your manual calculations.*")
 
-            # --- TABEL EKSPOR V1 - V15 ---
+            # --- EXPORT TABLES V1 - V15 ---
             st.markdown("### 📥 Download Area (V1 - V15)")
-            st.info("Download data SKU murni per bidang Diagram Venn untuk di-SUM di Excel.")
+            st.info("Download pure SKU data per Venn Diagram sector for further calculation in Excel.")
 
             export_grids = st.columns(4)
             bidang_data = [
@@ -1823,7 +1821,7 @@ def main():
                 ("V12 (V1 ∩ V2 ∩ V4)", m_ABD_only),
                 ("V13 (V1 ∩ V3 ∩ V4)", m_ACD_only),
                 ("V14 (V2 ∩ V3 ∩ V4)", m_BCD_only),
-                ("V15 (BULLSEYE: Keempatnya)", m_ABCD),
+                ("V15 (BULLSEYE: All Four)", m_ABCD),
             ]
 
             for i, (label, mask) in enumerate(bidang_data):
@@ -1844,11 +1842,11 @@ def main():
                         st.button(f"📥 {label} (0)", disabled=True, use_container_width=True, key=f"btn_venn_{i}")
 
             st.markdown("---")
-            st.markdown("### 📋 Preview Tabel BULLSEYE (V15)")
+            st.markdown("### 📋 BULLSEYE Table Preview (V15)")
 
             df_bullseye = df_v[m_ABCD].copy()
             if df_bullseye.empty:
-                st.warning("Tidak ada SKU yang memenuhi kriteria BULLSEYE (Irisan V15).")
+                st.warning("No SKUs met the BULLSEYE criteria (V15 Intersection).")
             else:
                 base_display_cols = ['SKU', 'Product Name', 'New Code', 'New Product Name', 'Remark', 'Remark2',
                                      'Status', 'Country', 'Source_Sheet', 'Gross Sales (Current)', 'Qty (Current)',
@@ -1869,256 +1867,314 @@ def main():
                 st.dataframe(df_export_bullseye.style.format(format_dict_venn, na_rep=""), use_container_width=True,
                              hide_index=True)
 
-    # ---------------------------------------------------------
-    # TAB 3: RATIONALIZATION PROGRESS MONITOR
-    # ---------------------------------------------------------
-    with tab_progress:
-        st.markdown("### 📉 SKU Rationalization Progress Monitor")
+        # ---------------------------------------------------------
+        # TAB 3: RATIONALIZATION PROGRESS MONITOR
+        # ---------------------------------------------------------
+        with tab_progress:
+            st.markdown("### 📉 SKU Rationalization Progress Monitor")
 
-        # --- PERHITUNGAN DINAMIS DARI SUMBER DATA MENTAH (df_raw) ---
-        df_uncommon = df_raw.copy()
+            # --- DYNAMIC CALCULATION FROM RAW DATA (df_raw) ---
+            df_uncommon = df_raw.copy()
 
-        def get_sum(df, col):
-            return df[col].sum() if col in df.columns else 0
+            def get_sum(df, col):
+                return df[col].sum() if col in df.columns else 0
 
-        # Phase 1: Initial Base (All data without exception, Uncommon)
-        p1_sku = len(df_uncommon)
-        p1_sales = get_sum(df_uncommon, 'Gross Sales (Current)')
-        p1_gm = get_sum(df_uncommon, 'Gross Margin (Current)')
-        p1_cm = get_sum(df_uncommon, 'Contribution Margin (Current)')
+            # Phase 1: Initial Base (All data without exception, Uncommon)
+            p1_sku = len(df_uncommon)
+            p1_sales = get_sum(df_uncommon, 'Gross Sales (Current)')
+            p1_gm = get_sum(df_uncommon, 'Gross Margin (Current)')
+            p1_cm = get_sum(df_uncommon, 'Contribution Margin (Current)')
 
-        # Phase 2: House Keeping In-Active 768 SKU
-        if 'Remark' in df_uncommon.columns:
-            remark_clean = df_uncommon['Remark'].astype(str).str.strip().str.upper()
-            mask_exc = remark_clean.isin(['DISC', 'RENEWAL'])
-            df_p2 = df_uncommon[~mask_exc]
-        else:
-            df_p2 = df_uncommon.copy()
+            # Phase 2: House Keeping In-Active 768 SKU
+            if 'Remark' in df_uncommon.columns:
+                remark_clean = df_uncommon['Remark'].astype(str).str.strip().str.upper()
+                mask_exc = remark_clean.isin(['DISC', 'RENEWAL'])
+                df_p2 = df_uncommon[~mask_exc]
+            else:
+                df_p2 = df_uncommon.copy()
 
-        p2_sku = len(df_p2)
-        p2_sales = get_sum(df_p2, 'Gross Sales (Current)')
-        p2_gm = get_sum(df_p2, 'Gross Margin (Current)')
-        p2_cm = get_sum(df_p2, 'Contribution Margin (Current)')
+            p2_sku = len(df_p2)
+            p2_sales = get_sum(df_p2, 'Gross Sales (Current)')
+            p2_gm = get_sum(df_p2, 'Gross Margin (Current)')
+            p2_cm = get_sum(df_p2, 'Contribution Margin (Current)')
 
-        # Phase 3: Discontinue 50 SKU
-        if 'Status' in df_p2.columns:
-            mask_deact = df_p2['Status'].astype(str).str.contains('Deactivated 10-Aug', case=False, na=False)
-            df_p3 = df_p2[~mask_deact]
-        else:
-            df_p3 = df_p2.copy()
+            # Phase 3: Discontinue 50 SKU
+            if 'Status' in df_p2.columns:
+                mask_deact = df_p2['Status'].astype(str).str.contains('Deactivated 10-Aug', case=False, na=False)
+                df_p3 = df_p2[~mask_deact]
+            else:
+                df_p3 = df_p2.copy()
 
-        p3_sku = len(df_p3)
-        p3_sales = get_sum(df_p3, 'Gross Sales (Current)')
-        p3_gm = get_sum(df_p3, 'Gross Margin (Current)')
-        p3_cm = get_sum(df_p3, 'Contribution Margin (Current)')
+            p3_sku = len(df_p3)
+            p3_sales = get_sum(df_p3, 'Gross Sales (Current)')
+            p3_gm = get_sum(df_p3, 'Gross Margin (Current)')
+            p3_cm = get_sum(df_p3, 'Contribution Margin (Current)')
 
-        # Phase 4: Commonized SKU Export from 213 to 81 SKU
-        df_p4_raw = df_uncommon.copy()
-        if 'Status' in df_p4_raw.columns:
-            df_p4_raw = df_p4_raw[df_p4_raw['Status'].astype(str).str.strip().str.upper() == 'ACTIVE']
+            # Phase 4: Commonized SKU Export from 213 to 81 SKU
+            df_p4_raw = df_uncommon.copy()
+            if 'Status' in df_p4_raw.columns:
+                df_p4_raw = df_p4_raw[df_p4_raw['Status'].astype(str).str.strip().str.upper() == 'ACTIVE']
 
-        if 'New Code' in df_p4_raw.columns and 'New Product Name' in df_p4_raw.columns:
-            df_p4_raw['New Code'] = df_p4_raw['New Code'].fillna('UNKNOWN').astype(str)
-            df_p4_raw['New Product Name'] = df_p4_raw['New Product Name'].fillna('UNKNOWN').astype(str)
+            if 'New Code' in df_p4_raw.columns and 'New Product Name' in df_p4_raw.columns:
+                df_p4_raw['New Code'] = df_p4_raw['New Code'].fillna('UNKNOWN').astype(str)
+                df_p4_raw['New Product Name'] = df_p4_raw['New Product Name'].fillna('UNKNOWN').astype(str)
 
-            group_cols_p4 = ['Source_Sheet', 'New Code', 'New Product Name']
-            num_cols_p4 = df_p4_raw.select_dtypes(include=[np.number]).columns.tolist()
-            sum_cols_p4 = [c for c in num_cols_p4 if not c.endswith('(%)')]
+                group_cols_p4 = ['Source_Sheet', 'New Code', 'New Product Name']
+                num_cols_p4 = df_p4_raw.select_dtypes(include=[np.number]).columns.tolist()
+                sum_cols_p4 = [c for c in num_cols_p4 if not c.endswith('(%)')]
 
-            agg_dict_p4 = {c: 'sum' for c in sum_cols_p4}
-            df_p4_common = df_p4_raw.groupby(group_cols_p4, as_index=False).agg(agg_dict_p4)
-        else:
-            df_p4_common = df_p4_raw.copy()
+                agg_dict_p4 = {c: 'sum' for c in sum_cols_p4}
+                df_p4_common = df_p4_raw.groupby(group_cols_p4, as_index=False).agg(agg_dict_p4)
+            else:
+                df_p4_common = df_p4_raw.copy()
 
-        p4_sku = len(df_p4_common)
-        p4_sales = get_sum(df_p4_common, 'Gross Sales (Current)')
-        p4_gm = get_sum(df_p4_common, 'Gross Margin (Current)')
-        p4_cm = get_sum(df_p4_common, 'Contribution Margin (Current)')
+            p4_sku = len(df_p4_common)
+            p4_sales = get_sum(df_p4_common, 'Gross Sales (Current)')
+            p4_gm = get_sum(df_p4_common, 'Gross Margin (Current)')
+            p4_cm = get_sum(df_p4_common, 'Contribution Margin (Current)')
 
-        # Phase 5: 90% up Gross Sales, GM and CM
-        if not df_p4_common.empty and 'Gross Sales (Current)' in df_p4_common.columns:
-            cutoff = max(1, round(len(df_p4_common) * 0.45))
-            df_p5 = df_p4_common.sort_values(by='Gross Sales (Current)', ascending=False).head(cutoff)
-        else:
-            df_p5 = df_p4_common.copy()
+            # Phase 5: 90% up Gross Sales, GM and CM
+            if not df_p4_common.empty and 'Gross Sales (Current)' in df_p4_common.columns:
+                cutoff = max(1, round(len(df_p4_common) * 0.45))
+                df_p5 = df_p4_common.sort_values(by='Gross Sales (Current)', ascending=False).head(cutoff)
+            else:
+                df_p5 = df_p4_common.copy()
 
-        p5_sku = len(df_p5)
-        p5_sales = get_sum(df_p5, 'Gross Sales (Current)')
-        p5_gm = get_sum(df_p5, 'Gross Margin (Current)')
-        p5_cm = get_sum(df_p5, 'Contribution Margin (Current)')
+            p5_sku = len(df_p5)
+            p5_sales = get_sum(df_p5, 'Gross Sales (Current)')
+            p5_gm = get_sum(df_p5, 'Gross Margin (Current)')
+            p5_cm = get_sum(df_p5, 'Contribution Margin (Current)')
 
-        # Membangun dataframe murni untuk rendering grafik
-        progress_data_numeric = pd.DataFrame({
-            'Phase': [
-                'P1 (Initial Base)',
-                'P2 (House Keeping In-Active 768 SKU)',
-                'P3 (Discontinue 50 SKU)',
-                'P4 (Commonized SKU Export from 213 to 81 SKU)',
-                'P5 (90% up Gross Sales, GM and CM)'
-            ],
-            'Jumlah SKU': [p1_sku, p2_sku, p3_sku, p4_sku, p5_sku],
-            'Gross Sales (IDR)': [p1_sales, p2_sales, p3_sales, p4_sales, p5_sales],
-            'Gross Margin (IDR)': [p1_gm, p2_gm, p3_gm, p4_gm, p5_gm],
-            'Contribution Margin (IDR)': [p1_cm, p2_cm, p3_cm, p4_cm, p5_cm]
-        })
+            # Render chart data
+            progress_data_numeric = pd.DataFrame({
+                'Phase': [
+                    'P1 (Initial Base)',
+                    'P2 (Housekeeping In-Active 768 SKUs)',
+                    'P3 (Discontinue 50 SKUs)',
+                    'P4 (Commonized SKU Export from 213 to 81 SKUs)',
+                    'P5 (Top Performing SKUs - 90% Cumulative or 45% Count)'
+                ],
+                'Jumlah SKU': [p1_sku, p2_sku, p3_sku, p4_sku, p5_sku],
+                'Gross Sales (IDR)': [p1_sales, p2_sales, p3_sales, p4_sales, p5_sales],
+                'Gross Margin (IDR)': [p1_gm, p2_gm, p3_gm, p4_gm, p5_gm],
+                'Contribution Margin (IDR)': [p1_cm, p2_cm, p3_cm, p4_cm, p5_cm]
+            })
 
-        # Helper untuk formatting tabel pakai koma sebagai ribuan
-        def format_id_rupiah(val):
-            return f"{int(val):,}"
+            # Helper for formatting table using comma as thousands separator
+            def format_id_rupiah(val):
+                return f"{int(val):,}"
 
-        display_progress_df = progress_data_numeric.copy()
-        display_progress_df['Jumlah SKU'] = display_progress_df['Jumlah SKU'].apply(format_id_rupiah)
-        display_progress_df['Gross Sales (IDR)'] = display_progress_df['Gross Sales (IDR)'].apply(format_id_rupiah)
-        display_progress_df['Gross Margin (IDR)'] = display_progress_df['Gross Margin (IDR)'].apply(format_id_rupiah)
-        display_progress_df['Contribution Margin (IDR)'] = display_progress_df['Contribution Margin (IDR)'].apply(
-            format_id_rupiah)
+            display_progress_df = progress_data_numeric.copy()
+            display_progress_df.rename(columns={'Jumlah SKU': 'Total SKUs'}, inplace=True)
+            display_progress_df['Total SKUs'] = display_progress_df['Total SKUs'].apply(format_id_rupiah)
+            display_progress_df['Gross Sales (IDR)'] = display_progress_df['Gross Sales (IDR)'].apply(format_id_rupiah)
+            display_progress_df['Gross Margin (IDR)'] = display_progress_df['Gross Margin (IDR)'].apply(
+                format_id_rupiah)
+            display_progress_df['Contribution Margin (IDR)'] = display_progress_df['Contribution Margin (IDR)'].apply(
+                format_id_rupiah)
 
-        st.dataframe(display_progress_df, use_container_width=True, hide_index=True)
+            st.dataframe(display_progress_df, use_container_width=True, hide_index=True)
 
-        progress_metric = st.selectbox(
-            "Select Tracking Metric for Y-Axis:",
-            ["Jumlah SKU", "Gross Sales (IDR)", "Gross Margin (IDR)", "Contribution Margin (IDR)"]
-        )
-
-        # 5 Warna Eksekutif (Navy, Amber, Teal, Purple, Crimson)
-        executive_colors = ['#1e3a8a', '#d97706', '#0f766e', '#6b21a8', '#be123c']
-
-        # Rendering the Chart using Numeric values (Plotly handles the formatting via separators)
-        fig_prog = px.bar(
-            progress_data_numeric,
-            x='Phase',
-            y=progress_metric,
-            color='Phase',
-            color_discrete_sequence=executive_colors,
-            title=f"<b>RATIONALIZATION LIFECYCLE: {progress_metric.upper()}</b>"
-        )
-
-        if progress_metric == "Jumlah SKU":
-            fig_prog.update_traces(
-                texttemplate='<b>%{y:,.0f} SKUs</b>',
-                textposition='outside',
-                textfont=dict(size=16, color='#0f172a'),
-                width=0.55, marker_line_width=0
-            )
-        else:
-            fig_prog.update_traces(
-                texttemplate='<b>Rp %{y:,.0f}</b>',
-                textposition='outside',
-                textfont=dict(size=16, color='#0f172a'),
-                width=0.55, marker_line_width=0
+            progress_metric = st.selectbox(
+                "Select Tracking Metric for Y-Axis:",
+                ["Total SKUs", "Gross Sales (IDR)", "Gross Margin (IDR)", "Contribution Margin (IDR)"]
             )
 
-        fig_prog.update_layout(
-            separators=",.",  # Force Plotly to use dot (.) as thousands separator and comma (,) as decimal
-            plot_bgcolor='white',
-            paper_bgcolor='white',
-            showlegend=False,
-            yaxis=dict(
-                showgrid=True, gridcolor='#f1f5f9',
-                showline=False, showticklabels=False, title=""
-            ),
-            xaxis=dict(
-                showgrid=False, showline=True, linewidth=2, linecolor='#334155',
-                title="", tickfont=dict(size=13, color='#334155', family="Arial")
-            ),
-            title_font=dict(size=22, color='#0f172a', family="Arial"),
-            margin=dict(t=80, b=40, l=40, r=40),
-            height=500
-        )
+            # Map the metric back to the dataframe column for plotting
+            plot_metric_col = progress_metric if progress_metric != "Total SKUs" else "Jumlah SKU"
 
-        # Ensure Y-axis range is high enough so outside text doesn't get clipped
-        max_y = progress_data_numeric[progress_metric].max()
-        fig_prog.update_yaxes(range=[0, max_y * 1.25])
+            # Executive Colors
+            executive_colors = ['#1e3a8a', '#d97706', '#0f766e', '#6b21a8', '#be123c']
 
-        st.plotly_chart(fig_prog, use_container_width=True)
+            # Rendering the Chart
+            fig_prog = px.bar(
+                progress_data_numeric,
+                x='Phase',
+                y=plot_metric_col,
+                color='Phase',
+                color_discrete_sequence=executive_colors,
+                title=f"<b>RATIONALIZATION LIFECYCLE: {progress_metric.upper()}</b>"
+            )
 
-        # =========================================================
-        # NEW MODULE: FINANCIAL OUTLOOK (P&L MONITORING)
-        # =========================================================
-        st.markdown("---")
-        st.markdown("### 📋 Financial Outlook: P&L Monitoring (Surviving SKUs)")
-        st.info(
-            "💡 Unggah file **P&L Detail (.csv)** untuk memantau performa finansial dari SKU 'Elite' yang lolos rasionalisasi. Mesin akan melakukan proyeksi peningkatan Gross Margin minimal ke angka **36.8%** secara otomatis pada kuartal terkait.")
+            if plot_metric_col == "Jumlah SKU":
+                fig_prog.update_traces(
+                    texttemplate='<b>%{y:,.0f} SKUs</b>',
+                    textposition='outside',
+                    textfont=dict(size=16, color='#0f172a'),
+                    width=0.55, marker_line_width=0
+                )
+            else:
+                fig_prog.update_traces(
+                    texttemplate='<b>Rp %{y:,.0f}</b>',
+                    textposition='outside',
+                    textfont=dict(size=16, color='#0f172a'),
+                    width=0.55, marker_line_width=0
+                )
 
-        pl_file = st.file_uploader("Unggah File Data P&L Detail (.csv)", type=["csv"], key="pl_uploader")
+            fig_prog.update_layout(
+                separators=",.",  # Plotly uses dot (.) as thousands separator and comma (,) as decimal
+                plot_bgcolor='white',
+                paper_bgcolor='white',
+                showlegend=False,
+                yaxis=dict(
+                    showgrid=True, gridcolor='#f1f5f9',
+                    showline=False, showticklabels=False, title=""
+                ),
+                xaxis=dict(
+                    showgrid=False, showline=True, linewidth=2, linecolor='#334155',
+                    title="", tickfont=dict(size=13, color='#334155', family="Arial")
+                ),
+                title_font=dict(size=22, color='#0f172a', family="Arial"),
+                margin=dict(t=80, b=40, l=40, r=40),
+                height=500
+            )
 
-        if pl_file is not None:
-            try:
-                # 1. BACA FILE
-                df_pl = pd.read_csv(pl_file, sep=';')
-                if len(df_pl.columns) == 1:
-                    pl_file.seek(0)
-                    df_pl = pd.read_csv(pl_file, sep=',')
+            # Ensure Y-axis range is high enough so outside text doesn't get clipped
+            max_y = progress_data_numeric[plot_metric_col].max()
+            fig_prog.update_yaxes(range=[0, max_y * 1.25])
 
-                # 2. DATA CLEANSING (Pembersihan Tanda Baca Rupiah ERP)
-                def clean_currency(x):
-                    if pd.isna(x): return 0.0
-                    x_str = str(x).strip()
-                    if x_str in ['-', '']: return 0.0
-                    x_str = x_str.replace('.', '').replace(',', '.')
-                    try:
-                        return float(x_str)
-                    except:
-                        return 0.0
+            st.plotly_chart(fig_prog, use_container_width=True)
 
-                cols_to_clean = [
-                    'Gross Sales', 'Sales Return', 'Sales Deduction', 'Net Sales', 'Total COGS', 'COGS_Regular',
-                    'Royalty', 'Gross Profit',
-                    'Advertising Activity', 'Domestic Marketing', 'Export Marketing Support', 'Export Marketing',
-                    'Research & Analysis Expenses', 'Selling Activity Expenses', 'Travelling Expenses',
-                    'Others Expenses',
-                    'Selling Personnel', 'Export Selling Activity', 'Export Transportation', 'Export Personnel',
-                    'Export Others', 'General Affair Expenses', 'Finance Expenses', 'Computer Expenses',
-                    'General Personnel Expenses', 'Education', 'Entertainment', 'Sundry Expenses',
-                    'General Administrative', 'Depreciation/Amortisation'
-                ]
-                for c in cols_to_clean:
-                    if c in df_pl.columns:
-                        df_pl[c] = df_pl[c].apply(clean_currency)
+            # =========================================================
+            # NEW MODULE: FINANCIAL OUTLOOK (P&L MONITORING)
+            # =========================================================
+            st.markdown("---")
+            st.markdown("### 📋 Financial Outlook: P&L Monitoring (Surviving SKUs)")
+            st.info(
+                "💡 Upload **3 separate CSV files**. The system uses the **Base P&L Data** to establish the initial benchmark (full historical granularity), and applies the **SKU Mapping File** to the **Quarterly P&L Data** to project the consolidated Phase 5 performance.")
 
-                if 'Product Name' in df_pl.columns:
-                    df_pl['Product Name'] = df_pl['Product Name'].astype(str).str.strip()
+            col_up1, col_up2, col_up3 = st.columns(3)
+            with col_up1:
+                pl_base_file = st.file_uploader("1. Base P&L Data (.csv)", type=["csv"], key="pl_base_up")
+            with col_up2:
+                pl_proj_file = st.file_uploader("2. Quarterly P&L Data (.csv)", type=["csv"], key="pl_proj_up")
+            with col_up3:
+                pl_map_file = st.file_uploader("3. SKU Mapping (.csv)", type=["csv"], key="pl_map_up")
 
-                # 3. CHRONOLOGICAL QUARTER MAPPING (Dieksekusi di level RAW PL DATA agar utuh)
-                if 'Month' in df_pl.columns and 'Year' in df_pl.columns:
-                    df_pl['Month_Str'] = df_pl['Month'].astype(str).str.strip().str.capitalize()
-                    df_pl['Year_Num'] = pd.to_numeric(df_pl['Year'], errors='coerce').fillna(2000)
+            # Replace Radio Buttons with a Single Number Input
+            target_gm_pct = st.number_input(
+                "Target Gross Margin Optimization (%)",
+                min_value=0.0,
+                max_value=100.0,
+                value=0.0,
+                step=0.1,
+                help="Set to 0.0% for As-Is Scenario (no price changes). Set a value > 0% to optimize prices for underperforming SKUs."
+            )
 
-                    df_pl['Month_Num'] = pd.to_datetime(df_pl['Month_Str'], format='%B',
-                                                        errors='coerce').dt.month.fillna(1)
-                    unique_periods = df_pl[['Year_Num', 'Month_Num', 'Month_Str']].drop_duplicates().sort_values(
-                        by=['Year_Num', 'Month_Num'])
+            if pl_base_file is not None and pl_proj_file is not None and pl_map_file is not None:
+                try:
+                    # 0. READ MAPPING FILE AND CREATE DICTIONARIES
+                    df_map = pd.read_csv(pl_map_file, sep=None, engine='python', dtype=str)
+                    df_map.columns = df_map.columns.str.strip()
+                    for c in df_map.columns:
+                        df_map[c] = df_map[c].astype(str).str.strip().replace(['nan', 'NaN', 'None'], '')
 
-                    chunks = np.array_split(unique_periods['Month_Str'].values, 4)
-                    month_to_q = {}
-                    for i, chunk in enumerate(chunks):
-                        for m in chunk:
-                            month_to_q[m] = f"Q{i + 1}"
+                    # Target correct columns using Product Key to avoid whitespace typo issues
+                    col_pk = next((col for col in df_map.columns if 'Produk_Key' in col or 'Product_Key' in col),
+                                  df_map.columns[0])
+                    col_nc = next((col for col in df_map.columns if 'New Code' in col), df_map.columns[2])
+                    col_npn = next((col for col in df_map.columns if 'New Product Name' in col), df_map.columns[3])
 
-                    df_pl['Quarter'] = df_pl['Month_Str'].map(month_to_q).fillna('Q1')
-                else:
-                    df_pl['Quarter'] = 'Q1'
+                    dict_code = dict(zip(df_map[col_pk], df_map[col_nc]))
+                    dict_name = dict(zip(df_map[col_pk], df_map[col_npn]))
 
-                # 4. FILTERING SURVIVING SKUs (Suntikan Data dari Pareto)
-                if 'pareto_master_survivors' in st.session_state:
-                    surviving_masters = st.session_state['pareto_master_survivors']
+                    # HELPER FUNCTION TO LOAD AND CLEAN P&L DATA
+                    def load_and_clean_pl(file, apply_mapping=False):
+                        # 1. READ FILE AS TEXT FOR IDENTITY COLUMNS TO PREVENT SCIENTIFIC NOTATION
+                        df = pd.read_csv(file, sep=';', dtype=str)
+                        if len(df.columns) == 1:
+                            file.seek(0)
+                            df = pd.read_csv(file, sep=',', dtype=str)
 
-                    # BUG FIX MAPPING: Menggunakan kolom Product Name aslinya
-                    if view_mode in ["Common (Consolidated Master SKUs)", "Commonized Only (Master C- Prefix SKUs)"]:
-                        surviving_granular_names = df_raw[df_raw['New Product Name'].isin(surviving_masters)][
-                            'Product Name'].astype(str).str.strip().tolist()
+                        df.columns = df.columns.str.strip()
+
+                        # 2. TEXT DATA CLEANSING
+                        text_cols_pl = ['Produk_Key', 'Product Name', 'Brand', 'Series', 'Segmentation', 'Category',
+                                        'Market', 'Month', 'Year']
+                        for c in text_cols_pl:
+                            if c in df.columns:
+                                df[c] = df[c].astype(str).str.replace(r'\.0$', '', regex=True).str.strip().replace(
+                                    ['nan', 'NaN', 'None'], '')
+
+                        # 3. NUMERIC DATA CLEANSING (Handling Currency Formats)
+                        def clean_currency(x):
+                            if pd.isna(x): return 0.0
+                            x_str = str(x).strip()
+                            if x_str in ['-', '']: return 0.0
+                            x_str = x_str.replace('.', '').replace(',', '.')
+                            try:
+                                return float(x_str)
+                            except:
+                                return 0.0
+
+                        cols_to_clean = [
+                            'Gross Sales', 'Sales Return', 'Sales Deduction', 'Net Sales', 'Total COGS', 'COGS_Regular',
+                            'Royalty', 'Gross Profit',
+                            'Advertising Activity', 'Domestic Marketing', 'Export Marketing Support',
+                            'Export Marketing',
+                            'Research & Analysis Expenses', 'Selling Activity Expenses', 'Travelling Expenses',
+                            'Others Expenses',
+                            'Selling Personnel', 'Export Selling Activity', 'Export Transportation', 'Export Personnel',
+                            'Export Others', 'General Affair Expenses', 'Finance Expenses', 'Computer Expenses',
+                            'General Personnel Expenses', 'Education', 'Entertainment', 'Sundry Expenses',
+                            'General Administrative', 'Depreciation/Amortisation'
+                        ]
+                        for c in cols_to_clean:
+                            if c in df.columns:
+                                df[c] = df[c].apply(clean_currency)
+
+                        # INJECT MAPPING INTO P&L DATA VIA ABSOLUTE PRODUCT KEY (ONLY IF REQUESTED)
+                        if apply_mapping:
+                            if 'Produk_Key' in df.columns:
+                                df['New Code'] = df['Produk_Key'].map(dict_code).fillna(df.get('Produk_Key', ''))
+                                df['New Product Name'] = df['Produk_Key'].map(dict_name).fillna(
+                                    df.get('Product Name', ''))
+                            elif 'Product Name' in df.columns:
+                                # Fallback if Produk_Key is absent
+                                df['New Code'] = df['Product Name'].map(dict_code).fillna(df.get('Produk_Key', ''))
+                                df['New Product Name'] = df['Product Name'].map(dict_name).fillna(df['Product Name'])
+
+                        return df
+
+                    # Load Base without mapping (to retain 2424 SKUs natively), Load Projected with mapping
+                    df_pl_base = load_and_clean_pl(pl_base_file, apply_mapping=False)
+                    df_pl_proj = load_and_clean_pl(pl_proj_file, apply_mapping=True)
+
+                    # 4. CHRONOLOGICAL QUARTER MAPPING FOR PROJECTED DATA
+                    if 'Month' in df_pl_proj.columns and 'Year' in df_pl_proj.columns:
+                        df_pl_proj['Month_Str'] = df_pl_proj['Month'].astype(str).str.strip().str.capitalize()
+                        df_pl_proj['Year_Num'] = pd.to_numeric(df_pl_proj['Year'], errors='coerce').fillna(2000)
+
+                        df_pl_proj['Month_Num'] = pd.to_datetime(df_pl_proj['Month_Str'], format='%B',
+                                                                 errors='coerce').dt.month.fillna(1)
+                        unique_periods = df_pl_proj[
+                            ['Year_Num', 'Month_Num', 'Month_Str']].drop_duplicates().sort_values(
+                            by=['Year_Num', 'Month_Num'])
+
+                        chunks = np.array_split(unique_periods['Month_Str'].values, 4)
+                        month_to_q = {}
+                        for i, chunk in enumerate(chunks):
+                            for m in chunk:
+                                month_to_q[m] = f"Q{i + 1}"
+
+                        df_pl_proj['Quarter'] = df_pl_proj['Month_Str'].map(month_to_q).fillna('Q1')
                     else:
-                        surviving_granular_names = df_raw[df_raw['Product Name'].isin(surviving_masters)][
-                            'Product Name'].astype(str).str.strip().tolist()
+                        df_pl_proj['Quarter'] = 'Q1'
 
-                    df_pl_survivors = df_pl[df_pl['Product Name'].isin(surviving_granular_names)].copy()
+                    # 5. ISOLATE THE DEFINITIVE 663 MASTER SKUs
+                    # Obtain exactly one unique row per Master SKU name from P5
+                    surviving_masters_df = df_p5[['New Code', 'New Product Name']].drop_duplicates(
+                        subset=['New Product Name'])
+                    surviving_masters_list = surviving_masters_df['New Product Name'].tolist()
 
-                    # 5. PROJECTION: GROSS MARGIN IMPROVEMENT (Target 36.8%)
-                    # Hitung GM % berdasarkan Rumus yang Disepakati
+                    df_pl_survivors = df_pl_proj[df_pl_proj['New Product Name'].isin(surviving_masters_list)].copy()
+
+                    # 6. SCENARIO PROJECTION LOGIC
                     df_pl_survivors['Calc_GS_Net'] = df_pl_survivors.get('Gross Sales', 0) + df_pl_survivors.get(
                         'Sales Return', 0)
 
-                    sku_gm = df_pl_survivors.groupby('Product Name').agg(
+                    # Grouping strictly by New Product Name to lift prices uniformly at the Master SKU level
+                    sku_gm = df_pl_survivors.groupby('New Product Name').agg(
                         total_gs=('Calc_GS_Net', 'sum'),
                         total_cogs_reg=('COGS_Regular', 'sum'),
                         total_royalty=('Royalty', 'sum')
@@ -2126,55 +2182,50 @@ def main():
                     sku_gm['total_gm'] = sku_gm['total_gs'] - sku_gm['total_cogs_reg'] - sku_gm['total_royalty']
                     sku_gm['gm_pct'] = np.where(sku_gm['total_gs'] > 0, sku_gm['total_gm'] / sku_gm['total_gs'], 0)
 
-                    skus_to_improve = sku_gm[sku_gm['gm_pct'] < 0.368].index
-
                     df_proj = df_pl_survivors.copy()
 
-                    # Menghitung Delta (Kekurangan Margin) per SKU
-                    delta = (0.368 * sku_gm.loc[skus_to_improve, 'total_gs'] - sku_gm.loc[
-                        skus_to_improve, 'total_gm']) / 0.816
-                    delta = np.maximum(delta, 0)
+                    if target_gm_pct > 0.0:
+                        target_gm_decimal = target_gm_pct / 100.0
+                        skus_to_improve = sku_gm[sku_gm['gm_pct'] < target_gm_decimal].index
+                        target_gs = (sku_gm.loc[skus_to_improve, 'total_cogs_reg'] + sku_gm.loc[
+                            skus_to_improve, 'total_royalty']) / (1 - target_gm_decimal)
 
-                    # Buat Multiplier
-                    gs_mult = 1 + (delta / 2) / (sku_gm.loc[skus_to_improve, 'total_gs'] + 1e-9)
-                    cogs_mult = 1 - (delta / 2) / (sku_gm.loc[skus_to_improve, 'total_cogs_reg'] + 1e-9)
+                        # 100% Multiplier for Gross Sales
+                        gs_mult = target_gs / (sku_gm.loc[skus_to_improve, 'total_gs'] + 1e-9)
+                        df_proj['gs_mult'] = df_proj['New Product Name'].map(gs_mult).fillna(1.0)
+                    else:
+                        df_proj['gs_mult'] = 1.0
 
-                    df_proj['gs_mult'] = df_proj['Product Name'].map(gs_mult).fillna(1.0)
-                    df_proj['cogs_mult'] = df_proj['Product Name'].map(cogs_mult).fillna(1.0)
-
-                    # Apply multiplier ke baris transaksi (Gross Sales naik, COGS turun)
+                    # Apply multiplier to transaction rows (Only Gross Sales increases)
                     row_gs_delta = df_proj.get('Gross Sales', 0) * (df_proj['gs_mult'] - 1)
                     if 'Gross Sales' in df_proj.columns: df_proj['Gross Sales'] += row_gs_delta
                     if 'Net Sales' in df_proj.columns: df_proj['Net Sales'] += row_gs_delta
 
-                    if 'COGS_Regular' in df_proj.columns:
-                        row_cogs_delta = df_proj['COGS_Regular'] * (1 - df_proj['cogs_mult'])
-                        df_proj['COGS_Regular'] -= row_cogs_delta
-                        if 'Total COGS' in df_proj.columns: df_proj['Total COGS'] -= row_cogs_delta
+                    # UPDATE GROSS PROFIT ACCORDINGLY
+                    if 'Gross Profit' in df_proj.columns:
+                        df_proj['Gross Profit'] += row_gs_delta
 
-                    # 6. CORE CALCULATION ENGINE
-                    sga_cols = ['Selling Activity Expenses', 'Travelling Expenses', 'Others Expenses',
-                                'Selling Personnel',
-                                'Export Selling Activity', 'Export Transportation', 'Export Personnel', 'Export Others',
-                                'General Affair Expenses', 'Finance Expenses', 'Computer Expenses',
-                                'General Personnel Expenses',
-                                'Education', 'Entertainment', 'Sundry Expenses']
+                    # 7. CORE CALCULATION ENGINE
+                    sga_cols = [
+                        'Selling Activity Expenses', 'Travelling Expenses', 'Others Expenses', 'Selling Personnel',
+                        'Export Selling Activity', 'Export Marketing Support', 'Export Transportation',
+                        'Export Personnel',
+                        'Export Others',
+                        'General Affair Expenses', 'Finance Expenses', 'Computer Expenses',
+                        'General Personnel Expenses',
+                        'Education', 'Entertainment', 'Sundry Expenses', 'Depreciation/Amortisation'
+                    ]
 
                     def calculate_metrics(df_source):
                         res = {}
-                        res['Calc_Gross_Sales'] = df_source.get('Gross Sales', 0).sum() + df_source.get('Sales Return',
-                                                                                                        0).sum()
-                        res['Calc_Sales_Ded'] = df_source.get('Sales Deduction', 0).sum()
+                        res['Calc_Gross_Sales'] = df_source.get('Gross Sales', 0).sum()
+                        res['Calc_Sales_Ded'] = df_source.get('Sales Deduction', 0).sum() + df_source.get(
+                            'Sales Return', 0).sum()
                         res['Calc_Net_Sales'] = df_source.get('Net Sales', 0).sum()
-                        res['Calc_COGS'] = df_source.get('Total COGS', 0).abs().sum()
+                        res['Calc_COGS'] = df_source.get('Total COGS', 0).sum()
+                        res['Calc_Gross_Profit'] = df_source.get('Gross Profit', 0).sum()
 
-                        # --- PERBAIKAN: Gross Profit P&L adalah Net Sales dikurangi Cost of Sales (Total COGS) ---
-                        res['Calc_Gross_Profit'] = res['Calc_Net_Sales'] - res['Calc_COGS']
-
-                        ap = (df_source.get('Advertising Activity', 0).sum() +
-                              df_source.get('Export Marketing Support', 0).sum())
-                        res['Calc_AP'] = abs(ap)
-
+                        res['Calc_AP'] = abs(df_source.get('Advertising Activity', 0).sum())
                         res['Calc_RD'] = abs(df_source.get('Research & Analysis Expenses', 0).sum())
 
                         sga_sum = 0
@@ -2182,27 +2233,23 @@ def main():
                             if c in df_source.columns:
                                 sga_sum += df_source[c].sum()
                         res['Calc_SGA'] = abs(sga_sum)
-
                         res['Calc_DA'] = abs(df_source.get('Depreciation/Amortisation', 0).sum())
                         return pd.Series(res)
 
                     def get_gm_ratio(df_source):
                         gs = df_source.get('Gross Sales', 0).sum() + df_source.get('Sales Return', 0).sum()
-                        # Rumus Gross Margin yang Disepakati untuk perhitungan Ratio
                         gm = gs - df_source.get('COGS_Regular', 0).sum() - df_source.get('Royalty', 0).sum()
                         if gs == 0: return 0.0
                         return gm / gs
 
-                    # Hitung BASE murni dari 100% RAW P&L DATA
-                    base_metrics = calculate_metrics(df_pl)
+                    # 8. AGGREGATION & FINAL TABLE PREPARATION
+                    base_metrics = calculate_metrics(df_pl_base)
 
-                    # Hitung Quarters murni dari PROJECTED SURVIVING SKUs
                     quarters = ['Q1', 'Q2', 'Q3', 'Q4']
                     q_metrics = {}
                     for q in quarters:
                         q_metrics[q] = calculate_metrics(df_proj[df_proj['Quarter'] == q])
 
-                    # 7. AGREGASI & PENYUSUNAN TABEL FINAL
                     pl_compiled = pd.DataFrame(q_metrics)
                     for q in quarters:
                         if q not in pl_compiled.columns:
@@ -2233,7 +2280,7 @@ def main():
                     r_ebitda = r_ebit + r_da
 
                     r_gm_ratio = {
-                        'Base': get_gm_ratio(df_pl),
+                        'Base': get_gm_ratio(df_pl_base),
                         'Q1': get_gm_ratio(df_proj[df_proj['Quarter'] == 'Q1']),
                         'Q2': get_gm_ratio(df_proj[df_proj['Quarter'] == 'Q2']),
                         'Q3': get_gm_ratio(df_proj[df_proj['Quarter'] == 'Q3']),
@@ -2241,32 +2288,36 @@ def main():
                         'FY': get_gm_ratio(df_proj[df_proj['Quarter'].isin(['Q1', 'Q2', 'Q3', 'Q4'])])
                     }
 
-                    # --- 8. PEMBUATAN DATAFRAME DETAIL PER SKU ---
-                    def get_sku_details(df_source, period_name):
+                    # --- 9. SKU DETAILS DATAFRAME CREATION ---
+
+                    # 9A. BASE details use the unmapped, raw original data
+                    def get_sku_details_base(df_source):
                         if df_source.empty: return pd.DataFrame()
+
+                        # Group by original fields if they exist
                         group_keys = [c for c in ['Produk_Key', 'Product Name'] if c in df_source.columns]
                         if not group_keys: return pd.DataFrame()
 
                         def calc_row(x):
-                            gs_net = x.get('Gross Sales', 0).sum() + x.get('Sales Return', 0).sum()
+                            gs_pure = x.get('Gross Sales', 0).sum()
+                            sales_ded_tot = x.get('Sales Deduction', 0).sum() + x.get('Sales Return', 0).sum()
                             ns = x.get('Net Sales', 0).sum()
-                            total_cogs = x.get('Total COGS', 0).abs().sum()
-
-                            gp_pl = ns - total_cogs
+                            total_cogs = x.get('Total COGS', 0).sum()
+                            gp_pl = x.get('Gross Profit', 0).sum()
 
                             cogs_reg = x.get('COGS_Regular', 0).sum()
                             royalty = x.get('Royalty', 0).sum()
+                            gs_net = x.get('Gross Sales', 0).sum() + x.get('Sales Return', 0).sum()
                             gm_custom = gs_net - cogs_reg - royalty
 
-                            ap = abs(
-                                x.get('Advertising Activity', 0).sum() + x.get('Export Marketing Support', 0).sum())
+                            ap = abs(x.get('Advertising Activity', 0).sum())
                             rd = abs(x.get('Research & Analysis Expenses', 0).sum())
                             sga = abs(sum(x.get(c, 0).sum() for c in sga_cols if c in x.columns))
                             da = abs(x.get('Depreciation/Amortisation', 0).sum())
 
                             return pd.Series({
-                                'Gross Sales': gs_net,
-                                'Sales Deductions': x.get('Sales Deduction', 0).sum(),
+                                'Gross Sales': gs_pure,
+                                'Sales Deductions': sales_ded_tot,
                                 'Net Sales': ns,
                                 '(-) Cost of Sales': total_cogs,
                                 'Gross Profit': gp_pl,
@@ -2280,20 +2331,78 @@ def main():
                             })
 
                         res = df_source.groupby(group_keys).apply(calc_row).reset_index()
-                        res.insert(len(group_keys), 'Period', period_name)
+                        res.insert(0, 'Period', 'Base')
+
+                        # Standardize columns to merge cleanly with projected data
+                        if 'Produk_Key' in res.columns:
+                            res.rename(columns={'Produk_Key': 'SKU'}, inplace=True)
                         return res
 
-                    details_base = get_sku_details(df_pl, 'Base')
-                    details_q1 = get_sku_details(df_proj[df_proj['Quarter'] == 'Q1'], 'Q1')
-                    details_q2 = get_sku_details(df_proj[df_proj['Quarter'] == 'Q2'], 'Q2')
-                    details_q3 = get_sku_details(df_proj[df_proj['Quarter'] == 'Q3'], 'Q3')
-                    details_q4 = get_sku_details(df_proj[df_proj['Quarter'] == 'Q4'], 'Q4')
-                    details_fy = get_sku_details(df_proj, 'FY')
+                    # 9B. PROJECTED details map directly to exactly 663 Master SKUs
+                    def get_sku_details_proj(df_source, period_name):
+                        def calc_row(x):
+                            gs_pure = x.get('Gross Sales', 0).sum()
+                            sales_ded_tot = x.get('Sales Deduction', 0).sum() + x.get('Sales Return', 0).sum()
+                            ns = x.get('Net Sales', 0).sum()
+                            total_cogs = x.get('Total COGS', 0).sum()
+                            gp_pl = x.get('Gross Profit', 0).sum()
+
+                            cogs_reg = x.get('COGS_Regular', 0).sum()
+                            royalty = x.get('Royalty', 0).sum()
+                            gs_net = x.get('Gross Sales', 0).sum() + x.get('Sales Return', 0).sum()
+                            gm_custom = gs_net - cogs_reg - royalty
+
+                            ap = abs(x.get('Advertising Activity', 0).sum())
+                            rd = abs(x.get('Research & Analysis Expenses', 0).sum())
+                            sga = abs(sum(x.get(c, 0).sum() for c in sga_cols if c in x.columns))
+                            da = abs(x.get('Depreciation/Amortisation', 0).sum())
+
+                            return pd.Series({
+                                'Gross Sales': gs_pure,
+                                'Sales Deductions': sales_ded_tot,
+                                'Net Sales': ns,
+                                '(-) Cost of Sales': total_cogs,
+                                'Gross Profit': gp_pl,
+                                '(-) A&P': ap,
+                                '(-) R&D': rd,
+                                '(-) Other SG&A': sga,
+                                'EBIT': gp_pl - ap - rd - sga,
+                                '(+) D&A': da,
+                                'EBITDA': gp_pl - ap - rd - sga + da,
+                                'Ratio Gross Margin': (gm_custom / gs_net) if gs_net != 0 else 0
+                            })
+
+                        if df_source.empty:
+                            res_final = surviving_masters_df.copy()
+                            for col in ['Gross Sales', 'Sales Deductions', 'Net Sales', '(-) Cost of Sales',
+                                        'Gross Profit', '(-) A&P', '(-) R&D', '(-) Other SG&A', 'EBIT', '(+) D&A',
+                                        'EBITDA', 'Ratio Gross Margin']:
+                                res_final[col] = 0.0
+                            res_final.insert(0, 'Period', period_name)
+                            res_final.rename(columns={'New Code': 'SKU', 'New Product Name': 'Product Name'},
+                                             inplace=True)
+                            return res_final
+
+                        # Group strictly by New Product Name to avoid mismatch due to New Code variants
+                        res = df_source.groupby('New Product Name').apply(calc_row).reset_index()
+
+                        # Left join enforces EXACTLY the 663 Master SKUs to appear, substituting 0.0 for missing ones
+                        res_final = surviving_masters_df.merge(res, on='New Product Name', how='left').fillna(0.0)
+                        res_final.insert(0, 'Period', period_name)
+                        res_final.rename(columns={'New Code': 'SKU', 'New Product Name': 'Product Name'}, inplace=True)
+                        return res_final
+
+                    details_base = get_sku_details_base(df_pl_base)
+                    details_q1 = get_sku_details_proj(df_proj[df_proj['Quarter'] == 'Q1'], 'Q1')
+                    details_q2 = get_sku_details_proj(df_proj[df_proj['Quarter'] == 'Q2'], 'Q2')
+                    details_q3 = get_sku_details_proj(df_proj[df_proj['Quarter'] == 'Q3'], 'Q3')
+                    details_q4 = get_sku_details_proj(df_proj[df_proj['Quarter'] == 'Q4'], 'Q4')
+                    details_fy = get_sku_details_proj(df_proj, 'FY')
 
                     df_all_details = pd.concat(
                         [details_base, details_q1, details_q2, details_q3, details_q4, details_fy], ignore_index=True)
 
-                    # 9. HTML INJECTION UNTUK ESTETIKA TABEL CORPORATE
+                    # 10. HTML INJECTION FOR CORPORATE TABLE AESTHETICS
                     def fmt(val):
                         if val == 0: return "-"
                         return f"{val:,.1f}"
@@ -2302,7 +2411,12 @@ def main():
                         if val == 0: return "0.0%"
                         return f"{val * 100:.1f}%"
 
-                    st.caption(f"*(Semua angka disajikan dalam satuan Miliar Rupiah / IDR Bn)*")
+                    st.caption(f"*(All figures are presented in Billion Rupiah / IDR Bn)*")
+
+                    table_title = "Financial Model & Tracking (As-Is Scenario)"
+                    if target_gm_pct > 0.0:
+                        table_title = f"Financial Model & Tracking (Optimized Target GM {target_gm_pct:.1f}%)"
+
                     html_table = f"""
                     <style>
                     .pl-table {{ width: 100%; border-collapse: collapse; font-family: 'Segoe UI', sans-serif; font-size: 14px; background-color: white; margin-bottom: 5px; }}
@@ -2314,7 +2428,7 @@ def main():
                     .pl-ratio-row td {{ font-weight: bold !important; background-color: #f8fafc; font-style: italic; border-top: 2px solid #94a3b8; border-bottom: 2px solid #94a3b8; }}
                     </style>
                     <table class='pl-table'>
-                        <tr><th colspan="7" style="font-size: 16px; font-weight: bold; background-color: #4472c4; color: white; text-align: center;">Financial Model & Tracking</th></tr>
+                        <tr><th colspan="7" style="font-size: 16px; font-weight: bold; background-color: #4472c4; color: white; text-align: center;">{table_title}</th></tr>
                         <tr><th>IDR Bn</th><th>Base</th><th>Q1</th><th>Q2</th><th>Q3</th><th>Q4</th><th>FY</th></tr>
                         <tr><td>Gross Sales</td><td>{fmt(r_gs['Base'])}</td><td>{fmt(r_gs['Q1'])}</td><td>{fmt(r_gs['Q2'])}</td><td>{fmt(r_gs['Q3'])}</td><td>{fmt(r_gs['Q4'])}</td><td>{fmt(r_gs['FY'])}</td></tr>
                         <tr><td>Sales Deductions</td><td>{fmt(r_sd['Base'])}</td><td>{fmt(r_sd['Q1'])}</td><td>{fmt(r_sd['Q2'])}</td><td>{fmt(r_sd['Q3'])}</td><td>{fmt(r_sd['Q4'])}</td><td>{fmt(r_sd['FY'])}</td></tr>
@@ -2339,10 +2453,15 @@ def main():
                     </table>
                     """
                     st.markdown(html_table, unsafe_allow_html=True)
-                    st.caption(
-                        f"*Tabel di atas membandingkan **Base** (total 100% data mentah CSV) dengan **Projected FY** (total Q1-Q4 dari {df_pl_survivors['Product Name'].nunique()} SKU Granular tersisa dengan target perbaikan Margin min. 36.8%).*")
 
-                    # 10. EXPORT EXCEL DENGAN STYLING IDENTIK & DETAIL SKU
+                    if target_gm_pct > 0.0:
+                        st.caption(
+                            f"*The table above compares **Base** (displaying all raw historical SKUs) with **Projected FY** (total aggregation of strictly {len(surviving_masters_list)} Master SKUs configured via the mapping, targeted to a minimum {target_gm_pct}% Margin purely through price adjustments).*")
+                    else:
+                        st.caption(
+                            f"*The table above compares **Base** (displaying all raw historical SKUs) with **Projected FY** (total aggregation of strictly {len(surviving_masters_list)} Master SKUs configured via the mapping, reflecting actual historical performance without any price adjustments).*")
+
+                    # 11. EXPORT TO EXCEL WITH IDENTICAL STYLING & EXACT SKU DETAILS
                     export_data = [
                         ['Gross Sales', r_gs['Base'], r_gs['Q1'], r_gs['Q2'], r_gs['Q3'], r_gs['Q4'], r_gs['FY']],
                         ['Sales Deductions', r_sd['Base'], r_sd['Q1'], r_sd['Q2'], r_sd['Q3'], r_sd['Q4'], r_sd['FY']],
@@ -2366,15 +2485,15 @@ def main():
                         ['EBITDA', r_ebitda['Base'], r_ebitda['Q1'], r_ebitda['Q2'], r_ebitda['Q3'], r_ebitda['Q4'],
                          r_ebitda['FY']],
                         ['', None, None, None, None, None, None],
-                        ['Ratio Gross Margin', r_gm_ratio['Base'], r_gm_ratio['Q1'], r_gm_ratio['Q2'], r_gm_ratio['Q3'],
-                         r_gm_ratio['Q4'], r_gm_ratio['FY']]
+                        ['Ratio Gross Margin', r_gm_ratio['Base'], r_gm_ratio['Q1'], r_gm_ratio['Q2'],
+                         r_gm_ratio['Q3'], r_gm_ratio['Q4'], r_gm_ratio['FY']]
                     ]
 
                     df_export_pl = pd.DataFrame(export_data, columns=['IDR Bn', 'Base', 'Q1', 'Q2', 'Q3', 'Q4', 'FY'])
 
                     buffer_pl = io.BytesIO()
                     with pd.ExcelWriter(buffer_pl, engine='xlsxwriter') as writer:
-                        # TULIS SHEET 1: SUMMARY
+                        # WRITE SHEET 1: SUMMARY
                         df_export_pl.to_excel(writer, index=False, sheet_name='Financial_Outlook', startrow=1)
                         workbook = writer.book
                         worksheet = writer.sheets['Financial_Outlook']
@@ -2418,7 +2537,7 @@ def main():
                             'bottom_color': '#94a3b8', 'align': 'left'
                         })
 
-                        worksheet.merge_range('A1:G1', 'Financial Model & Tracking', title_format)
+                        worksheet.merge_range('A1:G1', table_title, title_format)
 
                         for col_num, value in enumerate(df_export_pl.columns.values):
                             if col_num == 0:
@@ -2455,7 +2574,7 @@ def main():
                         worksheet.set_column('A:A', 25)
                         worksheet.set_column('B:G', 12)
 
-                        # TULIS SHEET 2: SKU DETAILS (Data granular murni dalam nilai Rupiah absolut)
+                        # WRITE SHEET 2: SKU DETAILS
                         df_all_details.to_excel(writer, index=False, sheet_name='SKU_Details')
                         ws_det = writer.sheets['SKU_Details']
 
@@ -2475,19 +2594,20 @@ def main():
                         for col_num, value in enumerate(df_all_details.columns.values):
                             ws_det.write(0, col_num, value, hdr_det_format)
 
-                col_dl_pl1, _ = st.columns([1, 4])
-                with col_dl_pl1:
-                    st.download_button(
-                        label="📥 Download P&L Table & Details (.xlsx)",
-                        data=buffer_pl.getvalue(),
-                        file_name="Financial_Outlook_Survivors.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        type="primary",
-                        use_container_width=True
-                    )
+                    col_dl_pl1, _ = st.columns([1, 4])
+                    with col_dl_pl1:
+                        st.download_button(
+                            label="📥 Download P&L Table & Details (.xlsx)",
+                            data=buffer_pl.getvalue(),
+                            file_name="Financial_Outlook_Survivors.xlsx",
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                            type="primary",
+                            use_container_width=True
+                        )
 
-            except Exception as e:
-                st.error(f"Gagal memproses data P&L. Pastikan format tabel sesuai standar. Detail error: {e}")
+                except Exception as e:
+                    st.error(
+                        f"Failed to process P&L data. Ensure the table format meets standard requirements. Error details: {e}")
 
 
 if __name__ == "__main__":
