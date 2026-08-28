@@ -2051,7 +2051,6 @@ def main():
             with col_up3:
                 pl_map_file = st.file_uploader("3. SKU Mapping (.csv)", type=["csv"], key="pl_map_up")
 
-            # Replace Radio Buttons with a Single Number Input
             target_gm_pct = st.number_input(
                 "Target Gross Margin Optimization (%)",
                 min_value=0.0,
@@ -2163,8 +2162,9 @@ def main():
 
                     # 5. ISOLATE THE DEFINITIVE 663 MASTER SKUs
                     # Obtain exactly one unique row per Master SKU name from P5
-                    surviving_masters_df = df_p5[['New Code', 'New Product Name']].drop_duplicates(
+                    surviving_masters_df = df_p5[['New Code', 'New Product Name', 'Source_Sheet']].drop_duplicates(
                         subset=['New Product Name'])
+                    surviving_masters_df.rename(columns={'Source_Sheet': 'Market'}, inplace=True)
                     surviving_masters_list = surviving_masters_df['New Product Name'].tolist()
 
                     df_pl_survivors = df_pl_proj[df_pl_proj['New Product Name'].isin(surviving_masters_list)].copy()
@@ -2295,7 +2295,7 @@ def main():
                         if df_source.empty: return pd.DataFrame()
 
                         # Group by original fields if they exist
-                        group_keys = [c for c in ['Produk_Key', 'Product Name'] if c in df_source.columns]
+                        group_keys = [c for c in ['Produk_Key', 'Product Name', 'Market'] if c in df_source.columns]
                         if not group_keys: return pd.DataFrame()
 
                         def calc_row(x):
@@ -2456,7 +2456,7 @@ def main():
 
                     if target_gm_pct > 0.0:
                         st.caption(
-                            f"*The table above compares **Base** (displaying all raw historical SKUs) with **Projected FY** (total aggregation of strictly {len(surviving_masters_list)} Master SKUs configured via the mapping, targeted to a minimum {target_gm_pct}% Margin purely through price adjustments).*")
+                            f"*The table above compares **Base** (displaying all raw historical SKUs) with **Projected FY** (total aggregation of strictly {len(surviving_masters_list)} Master SKUs configured via the mapping, targeted to a minimum {target_gm_pct:.1f}% Margin purely through price adjustments).*")
                     else:
                         st.caption(
                             f"*The table above compares **Base** (displaying all raw historical SKUs) with **Projected FY** (total aggregation of strictly {len(surviving_masters_list)} Master SKUs configured via the mapping, reflecting actual historical performance without any price adjustments).*")
@@ -2571,9 +2571,6 @@ def main():
                                         worksheet.write(row_num + 2, col_num, val,
                                                         data_format_bold if is_bold else data_format)
 
-                        worksheet.set_column('A:A', 25)
-                        worksheet.set_column('B:G', 12)
-
                         # WRITE SHEET 2: SKU DETAILS
                         df_all_details.to_excel(writer, index=False, sheet_name='SKU_Details')
                         ws_det = writer.sheets['SKU_Details']
@@ -2586,10 +2583,16 @@ def main():
                             {'bold': True, 'bg_color': '#4472c4', 'font_color': 'white', 'border': 1,
                              'align': 'center'})
 
-                        ws_det.set_column('A:B', 30)
-                        ws_det.set_column('C:C', 10)
-                        ws_det.set_column('D:N', 18, num_fmt)
-                        ws_det.set_column('O:O', 18, pct_fmt)
+                        # Dynamic column sizing
+                        for col_idx, col_name in enumerate(df_all_details.columns):
+                            if col_name in ['Period', 'Market']:
+                                ws_det.set_column(col_idx, col_idx, 15)
+                            elif col_name in ['SKU', 'Product Name']:
+                                ws_det.set_column(col_idx, col_idx, 35)
+                            elif col_name == 'Ratio Gross Margin':
+                                ws_det.set_column(col_idx, col_idx, 18, pct_fmt)
+                            else:
+                                ws_det.set_column(col_idx, col_idx, 18, num_fmt)
 
                         for col_num, value in enumerate(df_all_details.columns.values):
                             ws_det.write(0, col_num, value, hdr_det_format)
