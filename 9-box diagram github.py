@@ -2051,14 +2051,25 @@ def main():
             with col_up3:
                 pl_map_file = st.file_uploader("3. SKU Mapping (.csv)", type=["csv"], key="pl_map_up")
 
-            target_gm_pct = st.number_input(
-                "Target Gross Margin Optimization (%)",
-                min_value=0.0,
-                max_value=100.0,
-                value=0.0,
-                step=0.1,
-                help="Set to 0.0% for As-Is Scenario (no price changes). Set a value > 0% to optimize prices for underperforming SKUs."
-            )
+            col_opt1, col_opt2 = st.columns(2)
+            with col_opt1:
+                target_gm_pct = st.number_input(
+                    "Target Gross Margin Optimization (%)",
+                    min_value=0.0,
+                    max_value=100.0,
+                    value=0.0,
+                    step=0.1,
+                    help="Set a minimum target Gross Margin. The system will simulate a price increase (boosting Gross Sales) for underperforming SKUs."
+                )
+            with col_opt2:
+                cogs_eff_pct = st.number_input(
+                    "COGS Efficiency Target (%)",
+                    min_value=-100.0,
+                    max_value=100.0,
+                    value=0.0,
+                    step=0.1,
+                    help="Input a percentage to simulate COGS efficiency across all surviving SKUs (e.g., enter -2.0 to reduce COGS by 2%)."
+                )
 
             if pl_base_file is not None and pl_proj_file is not None and pl_map_file is not None:
                 try:
@@ -2170,21 +2181,35 @@ def main():
                     df_pl_survivors = df_pl_proj[df_pl_proj['New Product Name'].isin(surviving_masters_list)].copy()
 
                     # 6. SCENARIO PROJECTION LOGIC
-                    df_pl_survivors['Calc_GS_Net'] = df_pl_survivors.get('Gross Sales', 0) + df_pl_survivors.get(
-                        'Sales Return', 0)
-
-                    # Grouping strictly by New Product Name to lift prices uniformly at the Master SKU level
-                    sku_gm = df_pl_survivors.groupby('New Product Name').agg(
-                        total_gs=('Calc_GS_Net', 'sum'),
-                        total_cogs_reg=('COGS_Regular', 'sum'),
-                        total_royalty=('Royalty', 'sum')
-                    )
-                    sku_gm['total_gm'] = sku_gm['total_gs'] - sku_gm['total_cogs_reg'] - sku_gm['total_royalty']
-                    sku_gm['gm_pct'] = np.where(sku_gm['total_gs'] > 0, sku_gm['total_gm'] / sku_gm['total_gs'], 0)
-
                     df_proj = df_pl_survivors.copy()
 
+                    # 6A. APPLY COGS EFFICIENCY FIRST
+                    if cogs_eff_pct != 0.0:
+                        cogs_mult = 1.0 + (cogs_eff_pct / 100.0)
+                        orig_cogs_reg = df_proj.get('COGS_Regular', 0)
+                        new_cogs_reg = orig_cogs_reg * cogs_mult
+                        delta_cogs = new_cogs_reg - orig_cogs_reg
+
+                        df_proj['COGS_Regular'] = new_cogs_reg
+                        if 'Total COGS' in df_proj.columns:
+                            df_proj['Total COGS'] += delta_cogs
+                        if 'Gross Profit' in df_proj.columns:
+                            # Subtracting delta_cogs (which is negative) effectively adds to Gross Profit
+                            df_proj['Gross Profit'] -= delta_cogs
+
+                    # 6B. APPLY TARGET GROSS MARGIN (PRICE INCREASE)
                     if target_gm_pct > 0.0:
+                        df_proj['Calc_GS_Net'] = df_proj.get('Gross Sales', 0) + df_proj.get('Sales Return', 0)
+
+                        # Grouping strictly by New Product Name to lift prices uniformly at the Master SKU level
+                        sku_gm = df_proj.groupby('New Product Name').agg(
+                            total_gs=('Calc_GS_Net', 'sum'),
+                            total_cogs_reg=('COGS_Regular', 'sum'),
+                            total_royalty=('Royalty', 'sum')
+                        )
+                        sku_gm['total_gm'] = sku_gm['total_gs'] - sku_gm['total_cogs_reg'] - sku_gm['total_royalty']
+                        sku_gm['gm_pct'] = np.where(sku_gm['total_gs'] > 0, sku_gm['total_gm'] / sku_gm['total_gs'], 0)
+
                         target_gm_decimal = target_gm_pct / 100.0
                         skus_to_improve = sku_gm[sku_gm['gm_pct'] < target_gm_decimal].index
                         target_gs = (sku_gm.loc[skus_to_improve, 'total_cogs_reg'] + sku_gm.loc[
@@ -2193,17 +2218,15 @@ def main():
                         # 100% Multiplier for Gross Sales
                         gs_mult = target_gs / (sku_gm.loc[skus_to_improve, 'total_gs'] + 1e-9)
                         df_proj['gs_mult'] = df_proj['New Product Name'].map(gs_mult).fillna(1.0)
-                    else:
-                        df_proj['gs_mult'] = 1.0
 
-                    # Apply multiplier to transaction rows (Only Gross Sales increases)
-                    row_gs_delta = df_proj.get('Gross Sales', 0) * (df_proj['gs_mult'] - 1)
-                    if 'Gross Sales' in df_proj.columns: df_proj['Gross Sales'] += row_gs_delta
-                    if 'Net Sales' in df_proj.columns: df_proj['Net Sales'] += row_gs_delta
+                        # Apply multiplier to transaction rows (Only Gross Sales increases)
+                        row_gs_delta = df_proj.get('Gross Sales', 0) * (df_proj['gs_mult'] - 1)
+                        if 'Gross Sales' in df_proj.columns: df_proj['Gross Sales'] += row_gs_delta
+                        if 'Net Sales' in df_proj.columns: df_proj['Net Sales'] += row_gs_delta
 
-                    # UPDATE GROSS PROFIT ACCORDINGLY
-                    if 'Gross Profit' in df_proj.columns:
-                        df_proj['Gross Profit'] += row_gs_delta
+                        # UPDATE GROSS PROFIT ACCORDINGLY
+                        if 'Gross Profit' in df_proj.columns:
+                            df_proj['Gross Profit'] += row_gs_delta
 
                     # 7. CORE CALCULATION ENGINE
                     sga_cols = [
@@ -2413,9 +2436,11 @@ def main():
 
                     st.caption(f"*(All figures are presented in Billion Rupiah / IDR Bn)*")
 
-                    table_title = "Financial Model & Tracking (As-Is Scenario)"
-                    if target_gm_pct > 0.0:
-                        table_title = f"Financial Model & Tracking (Optimized Target GM {target_gm_pct:.1f}%)"
+                    table_title = "Financial Model & Tracking"
+                    if target_gm_pct > 0.0 or cogs_eff_pct != 0.0:
+                        table_title += f" (Forecast: Target GM {target_gm_pct:.1f}%, COGS Efficiency {cogs_eff_pct:.1f}%)"
+                    else:
+                        table_title += " (As-Is Scenario)"
 
                     html_table = f"""
                     <style>
@@ -2454,12 +2479,8 @@ def main():
                     """
                     st.markdown(html_table, unsafe_allow_html=True)
 
-                    if target_gm_pct > 0.0:
-                        st.caption(
-                            f"*The table above compares **Base** (displaying all raw historical SKUs) with **Projected FY** (total aggregation of strictly {len(surviving_masters_list)} Master SKUs configured via the mapping, targeted to a minimum {target_gm_pct:.1f}% Margin purely through price adjustments).*")
-                    else:
-                        st.caption(
-                            f"*The table above compares **Base** (displaying all raw historical SKUs) with **Projected FY** (total aggregation of strictly {len(surviving_masters_list)} Master SKUs configured via the mapping, reflecting actual historical performance without any price adjustments).*")
+                    st.caption(
+                        f"*The table above compares **Base** (displaying all raw historical SKUs) with **Projected FY** (total aggregation of strictly {len(surviving_masters_list)} Master SKUs configured via the mapping, incorporating a GM target of {target_gm_pct:.1f}% and COGS Efficiency of {cogs_eff_pct:.1f}%).*")
 
                     # 11. EXPORT TO EXCEL WITH IDENTICAL STYLING & EXACT SKU DETAILS
                     export_data = [
@@ -2570,6 +2591,9 @@ def main():
                                     else:
                                         worksheet.write(row_num + 2, col_num, val,
                                                         data_format_bold if is_bold else data_format)
+
+                        worksheet.set_column('A:A', 25)
+                        worksheet.set_column('B:G', 12)
 
                         # WRITE SHEET 2: SKU DETAILS
                         df_all_details.to_excel(writer, index=False, sheet_name='SKU_Details')
