@@ -2416,10 +2416,10 @@ def main():
                         return res_final
 
                     details_base = get_sku_details_base(df_pl_base)
-                    details_q1 = get_sku_details_proj(df_proj[df_proj['Quarter'] == 'Q1'], 'Q1')
-                    details_q2 = get_sku_details_proj(df_proj[df_proj['Quarter'] == 'Q2'], 'Q2')
-                    details_q3 = get_sku_details_proj(df_proj[df_proj['Quarter'] == 'Q3'], 'Q3')
-                    details_q4 = get_sku_details_proj(df_proj[df_proj['Quarter'] == 'Q4'], 'Q4')
+                    details_q1 = get_sku_details_proj(df_proj[df_proj['Quarter'] == 'Q1'], 'Q3 2026')
+                    details_q2 = get_sku_details_proj(df_proj[df_proj['Quarter'] == 'Q2'], 'Q4 2026')
+                    details_q3 = get_sku_details_proj(df_proj[df_proj['Quarter'] == 'Q3'], 'Q1 2027')
+                    details_q4 = get_sku_details_proj(df_proj[df_proj['Quarter'] == 'Q4'], 'Q2 2027')
                     details_fy = get_sku_details_proj(df_proj, 'FY')
 
                     df_all_details = pd.concat(
@@ -2454,7 +2454,7 @@ def main():
                     </style>
                     <table class='pl-table'>
                         <tr><th colspan="7" style="font-size: 16px; font-weight: bold; background-color: #4472c4; color: white; text-align: center;">{table_title}</th></tr>
-                        <tr><th>IDR Bn</th><th>Base</th><th>Q1</th><th>Q2</th><th>Q3</th><th>Q4</th><th>FY</th></tr>
+                        <tr><th>IDR Bn</th><th>Base</th><th>Q3 2026</th><th>Q4 2026</th><th>Q1 2027</th><th>Q2 2027</th><th>FY</th></tr>
                         <tr><td>Gross Sales</td><td>{fmt(r_gs['Base'])}</td><td>{fmt(r_gs['Q1'])}</td><td>{fmt(r_gs['Q2'])}</td><td>{fmt(r_gs['Q3'])}</td><td>{fmt(r_gs['Q4'])}</td><td>{fmt(r_gs['FY'])}</td></tr>
                         <tr><td>Sales Deductions</td><td>{fmt(r_sd['Base'])}</td><td>{fmt(r_sd['Q1'])}</td><td>{fmt(r_sd['Q2'])}</td><td>{fmt(r_sd['Q3'])}</td><td>{fmt(r_sd['Q4'])}</td><td>{fmt(r_sd['FY'])}</td></tr>
                         <tr class='pl-bold-row'><td>Net Sales</td><td>{fmt(r_ns['Base'])}</td><td>{fmt(r_ns['Q1'])}</td><td>{fmt(r_ns['Q2'])}</td><td>{fmt(r_ns['Q3'])}</td><td>{fmt(r_ns['Q4'])}</td><td>{fmt(r_ns['FY'])}</td></tr>
@@ -2479,8 +2479,12 @@ def main():
                     """
                     st.markdown(html_table, unsafe_allow_html=True)
 
-                    st.caption(
-                        f"*The table above compares **Base** (displaying all raw historical SKUs) with **Projected FY** (total aggregation of strictly {len(surviving_masters_list)} Master SKUs configured via the mapping, incorporating a GM target of {target_gm_pct:.1f}% and COGS Efficiency of {cogs_eff_pct:.1f}%).*")
+                    if target_gm_pct > 0.0 or cogs_eff_pct != 0.0:
+                        st.caption(
+                            f"*The table above compares **Base** (displaying all raw historical SKUs) with **Projected FY** (total aggregation of strictly {len(surviving_masters_list)} Master SKUs configured via the mapping, incorporating a GM target of {target_gm_pct:.1f}% and COGS Efficiency of {cogs_eff_pct:.1f}%).*")
+                    else:
+                        st.caption(
+                            f"*The table above compares **Base** (displaying all raw historical SKUs) with **Projected FY** (total aggregation of strictly {len(surviving_masters_list)} Master SKUs configured via the mapping, reflecting actual historical performance without any adjustments).*")
 
                     # 11. EXPORT TO EXCEL WITH IDENTICAL STYLING & EXACT SKU DETAILS
                     export_data = [
@@ -2510,7 +2514,9 @@ def main():
                          r_gm_ratio['Q3'], r_gm_ratio['Q4'], r_gm_ratio['FY']]
                     ]
 
-                    df_export_pl = pd.DataFrame(export_data, columns=['IDR Bn', 'Base', 'Q1', 'Q2', 'Q3', 'Q4', 'FY'])
+                    df_export_pl = pd.DataFrame(export_data,
+                                                columns=['IDR Bn', 'Base', 'Q3 2026', 'Q4 2026', 'Q1 2027', 'Q2 2027',
+                                                         'FY'])
 
                     buffer_pl = io.BytesIO()
                     with pd.ExcelWriter(buffer_pl, engine='xlsxwriter') as writer:
