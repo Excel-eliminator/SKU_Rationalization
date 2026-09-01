@@ -665,7 +665,7 @@ def main():
 
         with st.form("threshold_form"):
             st.info(
-                "💡 **INFO:** The X and Y axes use the Average value as the absolute center point. The Average lines are marked in Red. Upper and Lower Threshold lines automatically adjust symmetrically against the Average.")
+                "💡 **INFO:** The X and Y axes use the dynamic Midpoint value as the absolute center point based on your custom Low and High thresholds. The Center lines are marked in Red.")
 
             parent_view_mode = "Common" if view_mode in ["Common (Consolidated Master SKUs)",
                                                          "Commonized Only (Master C- Prefix SKUs)"] else "Uncommon"
@@ -694,6 +694,10 @@ def main():
         y_high_thresh = float(y_high_thresh_input)
         x_low_thresh = float(x_low_thresh_input)
         x_high_thresh = float(x_high_thresh_input)
+
+        # Override the center with the user's explicit midpoints
+        avg_y = (y_low_thresh + y_high_thresh) / 2.0
+        robust_avg_x = (x_low_thresh + x_high_thresh) / 2.0
 
         if filtered_df.empty:
             st.error("No data found matching the selected filters.")
@@ -782,8 +786,8 @@ def main():
 
             def format_x_val_str(val):
                 if x_axis_selector == "Qty Growth (%)": return f"{val:.1f}%"
-                if val >= 1e9 or val <= -1e9: return f"Rp{val / 1e9:,.1f}M"
-                return f"Rp{val / 1e6:,.0f}Jt"
+                if val >= 1e9 or val <= -1e9: return f"Rp{val / 1e9:,.1f}Bn"
+                return f"Rp{val / 1e6:,.0f}M"
 
             x_format = ':.2f' if x_axis_selector == 'Qty Growth (%)' else ':,.0f'
 
@@ -839,8 +843,8 @@ def main():
             fig.add_vline(x=apply_custom_x_scale(robust_avg_x), line_dash="dot", line_color="red", line_width=2,
                           opacity=0.6, annotation_text=f" ← AVG X ({format_x_val_str(robust_avg_x)})",
                           annotation_position="top right", annotation_font_color="red")
-            fig.add_hline(y=avg_margin_pct, line_dash="dot", line_color="red", line_width=2, opacity=0.6,
-                          annotation_text=f"AVG Y ({avg_margin_pct:.1f}%)", annotation_position="top right",
+            fig.add_hline(y=avg_y, line_dash="dot", line_color="red", line_width=2, opacity=0.6,
+                          annotation_text=f"AVG Y ({avg_y:.1f}%)", annotation_position="top right",
                           annotation_font_color="red")
 
             mapped_plot_x_min = apply_custom_x_scale(plot_x_min)
@@ -2484,7 +2488,7 @@ def main():
                             f"*The table above compares **Base** (displaying all raw historical SKUs) with **Projected FY** (total aggregation of strictly {len(surviving_masters_list)} Master SKUs configured via the mapping, incorporating a GM target of {target_gm_pct:.1f}% and COGS Efficiency of {cogs_eff_pct:.1f}%).*")
                     else:
                         st.caption(
-                            f"*The table above compares **Base** (displaying all raw historical SKUs) with **Projected FY** (total aggregation of strictly {len(surviving_masters_list)} Master SKUs configured via the mapping, reflecting actual historical performance without any adjustments).*")
+                            f"*The table above compares **Base** (displaying all raw historical SKUs) with **Projected FY** (total aggregation of strictly {len(surviving_masters_list)} Master SKUs configured via the mapping, reflecting actual historical performance without any price adjustments).*")
 
                     # 11. EXPORT TO EXCEL WITH IDENTICAL STYLING & EXACT SKU DETAILS
                     export_data = [
@@ -2637,6 +2641,298 @@ def main():
                             type="primary",
                             use_container_width=True
                         )
+
+                    # =========================================================
+                    # 12. FORECAST 9-BOX BUBBLE CHART
+                    # =========================================================
+                    st.markdown("---")
+                    st.subheader("🫧 Forecast 9-Box Bubble Chart")
+                    st.info(
+                        "💡 **Interactive Forecasting**: Visualize your SKUs across different periods. The 9-Box distribution dynamically shifts based on your Target Gross Margin and COGS Efficiency settings.")
+
+                    period_to_plot = st.selectbox(
+                        "Select Period to Visualize:",
+                        ["Base", "Q3 2026", "Q4 2026", "Q1 2027", "Q2 2027", "FY"],
+                        help="Select 'Base' to view the historical unadjusted dataset (all SKUs), or any subsequent period to view the dynamically adjusted 663 surviving SKUs."
+                    )
+
+                    plot_df_f = df_all_details[df_all_details['Period'] == period_to_plot].copy()
+
+                    if not plot_df_f.empty:
+                        plot_df_f['Gross Margin (%)'] = plot_df_f['Ratio Gross Margin'] * 100
+                        plot_df_f['X_Val'] = plot_df_f['Gross Sales']
+                        plot_df_f['Y_Val'] = plot_df_f['Gross Margin (%)']
+                        plot_df_f['Bubble_Size'] = plot_df_f['Gross Sales'].abs().replace(0, 1)
+
+                        st.markdown("#### 🎚️ Smart-Scaling & Outlier Control (Forecast)")
+
+                        col_fout1, col_fout2 = st.columns(2)
+                        with col_fout1:
+                            min_outlier_limit_xf = st.number_input(
+                                "MINIMUM Gross Sales Limit for Average Calculation (Scope-out Long-tail):",
+                                value=0.0,
+                                step=1000000.0,
+                                key="min_outlier_xf",
+                                help="SKUs below this limit remain VISIBLE, but are EXCLUDED from calculating the X-Axis Average (Center) line."
+                            )
+                        with col_fout2:
+                            scale_factor_xf = st.number_input(
+                                "Right Box Visual Scale (X-Axis Multiplier):",
+                                value=0.2,
+                                step=0.1,
+                                min_value=0.001,
+                                max_value=10.0,
+                                key="scale_factor_xf",
+                                help="Set to 1.0 to view the original scale. Set < 1.0 (e.g., 0.2) to shrink the right-side boxes so the left and middle boxes get more screen space."
+                            )
+
+                        pos_df_f = plot_df_f[plot_df_f['Gross Sales'] > 0]
+                        if not pos_df_f.empty:
+                            total_sales_pos_f = pos_df_f['Gross Sales'].sum()
+                            if total_sales_pos_f > 0:
+                                avg_y_f = (pos_df_f['Gross Profit'].sum() / total_sales_pos_f) * 100
+                            else:
+                                avg_y_f = plot_df_f['Y_Val'].mean() if not plot_df_f.empty else 25.0
+                        else:
+                            avg_y_f = 25.0
+
+                        if pd.isna(avg_y_f) or avg_y_f <= 0: avg_y_f = 1.0
+
+                        def_y_low_f = avg_y_f * (2.0 / 3.0)
+                        def_y_high_f = avg_y_f * (4.0 / 3.0)
+
+                        normal_x_df_f = plot_df_f[plot_df_f['X_Val'] >= min_outlier_limit_xf]
+                        if not normal_x_df_f.empty:
+                            robust_avg_x_f = normal_x_df_f['X_Val'].mean()
+                        else:
+                            robust_avg_x_f = plot_df_f['X_Val'].mean()
+
+                        if pd.isna(robust_avg_x_f) or robust_avg_x_f <= 0:
+                            robust_avg_x_f = 100.0
+
+                        def_x_low_f = robust_avg_x_f * (2.0 / 3.0)
+                        def_x_high_f = robust_avg_x_f * (4.0 / 3.0)
+
+                        with st.form("forecast_chart_form"):
+                            st.info(
+                                "💡 **INFO:** The X and Y axes use the dynamic Midpoint value as the absolute center point based on your custom Low and High thresholds. The Center lines are marked in Red.")
+
+                            fk_state_str = f"{period_to_plot}_{target_gm_pct}_{cogs_eff_pct}_{min_outlier_limit_xf}"
+                            fk_suffix = hashlib.md5(fk_state_str.encode('utf-8')).hexdigest()
+                            step_xf = float(abs(def_x_high_f - def_x_low_f) / 2) if def_x_high_f != def_x_low_f else 1.0
+
+                            col_f1, col_f2, col_f3, col_f4 = st.columns(4)
+                            with col_f1:
+                                x_low_f = st.number_input("X-Axis Low to Med (Sales)", value=float(def_x_low_f),
+                                                          step=step_xf, key=f"xf_l_{fk_suffix}")
+                            with col_f2:
+                                x_high_f = st.number_input("X-Axis Med to High (Sales)", value=float(def_x_high_f),
+                                                           step=step_xf, key=f"xf_h_{fk_suffix}")
+                            with col_f3:
+                                y_low_f = st.number_input("Y-Axis Low to Med (GM %)", value=float(def_y_low_f),
+                                                          step=1.0, key=f"yf_l_{fk_suffix}")
+                            with col_f4:
+                                y_high_f = st.number_input("Y-Axis Med to High (GM %)", value=float(def_y_high_f),
+                                                           step=1.0, key=f"yf_h_{fk_suffix}")
+
+                            run_forecast = st.form_submit_button("▶ RUN & UPDATE FORECAST CHART", type="primary")
+
+                        # OVERRIDE THE AVERAGE WITH EXPLICIT MIDPOINTS
+                        avg_x_f = (x_low_f + x_high_f) / 2.0
+                        avg_y_f = (y_low_f + y_high_f) / 2.0
+
+                        # Assigning 9-Box Categories
+                        c_box_f = [
+                            (plot_df_f['Y_Val'] > y_high_f) & (plot_df_f['X_Val'] < x_low_f),
+                            (plot_df_f['Y_Val'] >= y_low_f) & (plot_df_f['Y_Val'] <= y_high_f) & (
+                                        plot_df_f['X_Val'] < x_low_f),
+                            (plot_df_f['Y_Val'] < y_low_f) & (plot_df_f['X_Val'] < x_low_f),
+
+                            (plot_df_f['Y_Val'] > y_high_f) & (plot_df_f['X_Val'] >= x_low_f) & (
+                                        plot_df_f['X_Val'] <= x_high_f),
+                            (plot_df_f['Y_Val'] >= y_low_f) & (plot_df_f['Y_Val'] <= y_high_f) & (
+                                        plot_df_f['X_Val'] >= x_low_f) & (plot_df_f['X_Val'] <= x_high_f),
+                            (plot_df_f['Y_Val'] < y_low_f) & (plot_df_f['X_Val'] >= x_low_f) & (
+                                        plot_df_f['X_Val'] <= x_high_f),
+
+                            (plot_df_f['Y_Val'] > y_high_f) & (plot_df_f['X_Val'] > x_high_f),
+                            (plot_df_f['Y_Val'] >= y_low_f) & (plot_df_f['Y_Val'] <= y_high_f) & (
+                                        plot_df_f['X_Val'] > x_high_f),
+                            (plot_df_f['Y_Val'] < y_low_f) & (plot_df_f['X_Val'] > x_high_f)
+                        ]
+
+                        b1_f = 'Box 1 (High Margin, Low Sales)'
+                        b2_f = 'Box 2 (Med Margin, Low Sales)'
+                        b3_f = 'Box 3 (Low Margin, Low Sales)'
+                        b4_f = 'Box 4 (High Margin, Med Sales)'
+                        b5_f = 'Box 5 (Med Margin, Med Sales)'
+                        b6_f = 'Box 6 (Low Margin, Med Sales)'
+                        b7_f = 'Box 7 (High Margin, High Sales)'
+                        b8_f = 'Box 8 (Med Margin, High Sales)'
+                        b9_f = 'Box 9 (Low Margin, High Sales)'
+
+                        choices_f = [b1_f, b2_f, b3_f, b4_f, b5_f, b6_f, b7_f, b8_f, b9_f]
+                        plot_df_f['Dynamic 9-Box Category'] = np.select(c_box_f, choices_f, default=b6_f)
+
+                        box_counts_f = plot_df_f['Dynamic 9-Box Category'].value_counts().to_dict()
+                        total_items_f = len(plot_df_f)
+
+                        color_discrete_map_f = {
+                            b1_f: '#3871b6', b4_f: '#3871b6', b7_f: '#319b5e',
+                            b8_f: '#319b5e', b2_f: '#d89f0e', b5_f: '#d89f0e',
+                            b6_f: '#d89f0e', b9_f: '#d89f0e', b3_f: '#c03d32'
+                        }
+
+                        def apply_custom_xf_scale(v):
+                            if v <= x_high_f:
+                                return v
+                            else:
+                                return x_high_f + (v - x_high_f) * scale_factor_xf
+
+                        plot_df_f['X_Plot'] = plot_df_f['X_Val'].apply(apply_custom_xf_scale)
+
+                        x_min_raw_f = plot_df_f['X_Val'].min()
+                        x_max_raw_f = plot_df_f['X_Val'].max()
+                        x_span_raw_f = x_max_raw_f - x_min_raw_f if x_max_raw_f != x_min_raw_f else avg_x_f
+                        plot_x_min_f = x_min_raw_f - (abs(x_span_raw_f) * 0.05)
+                        if x_min_raw_f < 0: plot_x_min_f = x_min_raw_f - (abs(x_span_raw_f) * 0.05)
+                        plot_x_max_f = x_max_raw_f + (abs(x_span_raw_f) * 0.05)
+
+                        y_min_raw_f = plot_df_f['Y_Val'].min()
+                        y_max_raw_f = plot_df_f['Y_Val'].max()
+                        y_span_raw_f = y_max_raw_f - y_min_raw_f if y_max_raw_f != y_min_raw_f else 100.0
+                        plot_y_min_f = y_min_raw_f - (y_span_raw_f * 0.05)
+                        plot_y_max_f = max(y_max_raw_f, y_high_f * 1.5) + (y_span_raw_f * 0.05)
+                        plot_y_min_f = min(plot_y_min_f, y_low_f - (y_low_f * 0.5))
+                        plot_y_max_f = max(plot_y_max_f, y_high_f + (y_high_f * 0.5))
+
+                        def format_x_val_str_f(val):
+                            if val >= 1e9 or val <= -1e9: return f"Rp{val / 1e9:,.1f}Bn"
+                            return f"Rp{val / 1e6:,.0f}M"
+
+                        hover_data_dict_f = {
+                            "Dynamic 9-Box Category": True,
+                            "Market": True if 'Market' in plot_df_f.columns else False,
+                            "Y_Val": ':.2f',
+                            "Gross Sales": 'Rp {:,.0f}',
+                            "X_Plot": False,
+                            "Bubble_Size": False
+                        }
+
+                        fig_f = px.scatter(
+                            plot_df_f,
+                            x='X_Plot',
+                            y='Y_Val',
+                            size="Bubble_Size",
+                            color="Dynamic 9-Box Category",
+                            color_discrete_map=color_discrete_map_f,
+                            hover_name="Product Name",
+                            hover_data=hover_data_dict_f,
+                            title=f"Forecast 9-Box Bubble Chart: Gross Margin vs Gross Sales ({period_to_plot}) | Total: {total_items_f} SKUs",
+                            size_max=60,
+                            render_mode="svg"
+                        )
+
+                        fig_f.add_vline(x=apply_custom_xf_scale(x_low_f), line_dash="dash", line_color="black",
+                                        line_width=2,
+                                        opacity=0.8, annotation_text=f" Low ({format_x_val_str_f(x_low_f)})",
+                                        annotation_position="top left")
+                        fig_f.add_vline(x=apply_custom_xf_scale(x_high_f), line_dash="dash", line_color="black",
+                                        line_width=2,
+                                        opacity=0.8, annotation_text=f" High ({format_x_val_str_f(x_high_f)})",
+                                        annotation_position="top right")
+                        fig_f.add_hline(y=y_low_f, line_dash="dash", line_color="black", line_width=2, opacity=0.8,
+                                        annotation_text=f"Low ({y_low_f:.1f}%)", annotation_position="bottom right")
+                        fig_f.add_hline(y=y_high_f, line_dash="dash", line_color="black", line_width=2, opacity=0.8,
+                                        annotation_text=f"High ({y_high_f:.1f}%)", annotation_position="top right")
+
+                        fig_f.add_vline(x=apply_custom_xf_scale(avg_x_f), line_dash="dot", line_color="red",
+                                        line_width=2,
+                                        opacity=0.6, annotation_text=f" ← AVG X ({format_x_val_str_f(avg_x_f)})",
+                                        annotation_position="top right", annotation_font_color="red")
+                        fig_f.add_hline(y=avg_y_f, line_dash="dot", line_color="red", line_width=2, opacity=0.6,
+                                        annotation_text=f"AVG Y ({avg_y_f:.1f}%)", annotation_position="top right",
+                                        annotation_font_color="red")
+
+                        mapped_plot_x_min_f = apply_custom_xf_scale(plot_x_min_f)
+                        mapped_plot_x_max_f = apply_custom_xf_scale(plot_x_max_f)
+                        mapped_x_low_f = apply_custom_xf_scale(x_low_f)
+                        mapped_x_high_f = apply_custom_xf_scale(x_high_f)
+
+                        mid_x_low_f = (mapped_plot_x_min_f + mapped_x_low_f) / 2
+                        mid_x_med_f = (mapped_x_low_f + mapped_x_high_f) / 2
+                        mid_x_high_f = (mapped_x_high_f + mapped_plot_x_max_f) / 2
+
+                        mid_y_low_f = (plot_y_min_f + y_low_f) / 2
+                        mid_y_med_f = (y_low_f + y_high_f) / 2
+                        mid_y_high_f = (y_high_f + plot_y_max_f) / 2
+
+                        box_coords_f = {
+                            b1_f: {'x': mid_x_low_f, 'y': mid_y_high_f, 'id': 'B1'},
+                            b2_f: {'x': mid_x_low_f, 'y': mid_y_med_f, 'id': 'B2'},
+                            b3_f: {'x': mid_x_low_f, 'y': mid_y_low_f, 'id': 'B3'},
+                            b4_f: {'x': mid_x_med_f, 'y': mid_y_high_f, 'id': 'B4'},
+                            b5_f: {'x': mid_x_med_f, 'y': mid_y_med_f, 'id': 'B5'},
+                            b6_f: {'x': mid_x_med_f, 'y': mid_y_low_f, 'id': 'B6'},
+                            b7_f: {'x': mid_x_high_f, 'y': mid_y_high_f, 'id': 'B7'},
+                            b8_f: {'x': mid_x_high_f, 'y': mid_y_med_f, 'id': 'B8'},
+                            b9_f: {'x': mid_x_high_f, 'y': mid_y_low_f, 'id': 'B9'}
+                        }
+
+                        for box_name, coords in box_coords_f.items():
+                            count = box_counts_f.get(box_name, 0)
+                            if count > 0:
+                                is_b5 = (coords['id'] == 'B5')
+                                fig_f.add_annotation(
+                                    x=coords['x'], y=coords['y'],
+                                    ax=mapped_x_high_f + (
+                                                mapped_plot_x_max_f - mapped_x_high_f) * 0.05 if is_b5 else None,
+                                    ay=mid_y_low_f if is_b5 else None,
+                                    axref="x" if is_b5 else None, ayref="y" if is_b5 else None,
+                                    xref="x", yref="y",
+                                    text=f"<span style='color:#1f2937;'><b>{coords['id']}</b></span><br><b>{count} SKUs</b>",
+                                    showarrow=is_b5, arrowhead=2 if is_b5 else 0,
+                                    arrowsize=1 if is_b5 else 1, arrowwidth=1 if is_b5 else 0.1,
+                                    arrowcolor="#1f2937" if is_b5 else None, standoff=0,
+                                    xanchor="left" if is_b5 else "center",
+                                    font=dict(size=13, color="#374151"),
+                                    bgcolor="rgba(255, 255, 255, 0.9)" if is_b5 else "rgba(255, 255, 255, 0.8)",
+                                    bordercolor="rgba(15, 23, 42, 0.8)" if is_b5 else "rgba(15, 23, 42, 0.3)",
+                                    borderwidth=2 if is_b5 else 1, borderpad=4
+                                )
+
+                        fig_f.add_annotation(
+                            x=0.98, y=0.98, xref="paper", yref="paper",
+                            text=f"<b>TOTAL:<br>{total_items_f} SKUs</b>", showarrow=False,
+                            font=dict(size=13, color="white"), bgcolor="#374151",
+                            bordercolor="black", borderwidth=1, borderpad=5
+                        )
+
+                        ticks_x_actual_f = [plot_x_min_f, 0, x_low_f, avg_x_f, x_high_f, plot_x_max_f]
+                        ticks_x_actual_f = sorted(
+                            list(set([v for v in ticks_x_actual_f if v >= plot_x_min_f and v <= plot_x_max_f])))
+
+                        fig_f.update_xaxes(
+                            range=[mapped_plot_x_min_f, mapped_plot_x_max_f],
+                            tickvals=[apply_custom_xf_scale(v) for v in ticks_x_actual_f],
+                            ticktext=[format_x_val_str_f(v) for v in ticks_x_actual_f],
+                            title_text="Gross Sales Absolute (IDR)"
+                        )
+                        fig_f.update_yaxes(range=[plot_y_min_f, plot_y_max_f], title_text="Gross Margin (%)")
+
+                        fig_f.update_layout(
+                            height=550, hovermode="closest", showlegend=True,
+                            legend=dict(title=None, orientation="h", yanchor="top", y=-0.15, xanchor="center", x=0.5),
+                            margin=dict(t=50, b=50, l=50, r=50)
+                        )
+
+                        st.plotly_chart(fig_f, use_container_width=True, config={
+                            'displayModeBar': True, 'modeBarButtonsToAdd': ['toImage'], 'displaylogo': False,
+                            'toImageButtonOptions': {'format': 'png', 'filename': f'Forecast_9Box_{period_to_plot}',
+                                                     'height': 800, 'width': 1400, 'scale': 2}
+                        })
+                    else:
+                        st.warning("No data available to render the forecast chart for the selected period.")
 
                 except Exception as e:
                     st.error(
