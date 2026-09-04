@@ -591,7 +591,17 @@ def main():
             filtered_df = filtered_df[
                 filtered_df[search_col].astype(str).str.contains(sku_search, case=False, na=False)]
 
-        st.markdown("### 🎚️ Smart-Scaling & Outlier Control")
+        st.markdown("### 🎚️ Smart-Scaling & Baseline Control")
+
+        st.info(
+            "💡 **INFO:** The X and Y axes use the calculated Average from your selected population below as the absolute center point. The Center lines are marked in Red.")
+
+        baseline_selector = st.radio(
+            "Calculate Average (Center Line) Baseline from:",
+            ["ALL Market", "LOCAL Only", "EXPORT Only"],
+            horizontal=True,
+            key="main_baseline"
+        )
 
         col_out1, col_out2 = st.columns(2)
         with col_out1:
@@ -612,64 +622,51 @@ def main():
                 help="Set to 1.0 to view the original scale (may look compressed if outliers exist). Set < 1.0 (e.g., 0.2 or 0.1) to shrink the right-side boxes (B7, B8, B9) so the left and middle boxes get more screen space without hiding any SKUs."
             )
 
-        if not filtered_df.empty:
-            positive_df = filtered_df[filtered_df[margin_val_col] >= 0]
-            total_sales_pos = positive_df['Gross Sales (Current)'].sum()
+        # Calculate exact baseline averages
+        base_df = df_main.copy()
+        if remark_filter and 'Remark' in base_df.columns:
+            actual_remarks = [r for r in remark_filter if r != "ALL"]
+            if actual_remarks:
+                base_df = base_df[base_df['Remark'].astype(str).isin(actual_remarks)]
 
-            if total_sales_pos > 0:
-                avg_margin_pct = (positive_df[margin_val_col].sum() / total_sales_pos) * 100
-            else:
-                avg_margin_pct = positive_df[y_col].mean() if not positive_df.empty else 25.0
+        if status_filter and 'Status' in base_df.columns:
+            actual_statuses = [s for s in status_filter if s != "ALL"]
+            if actual_statuses:
+                base_df = base_df[base_df['Status'].astype(str).isin(actual_statuses)]
 
-            if pd.isna(avg_margin_pct) or avg_margin_pct <= 0:
-                avg_margin_pct = 1.0
+        if sku_search:
+            base_df = base_df[base_df[search_col].astype(str).str.contains(sku_search, case=False, na=False)]
 
-            avg_y = avg_margin_pct
-            def_y_low = avg_y * (2.0 / 3.0)
-            def_y_high = avg_y * (4.0 / 3.0)
+        if baseline_selector == "LOCAL Only":
+            base_df = base_df[base_df['Source_Sheet'].astype(str).str.upper() == 'LOCAL']
+        elif baseline_selector == "EXPORT Only":
+            base_df = base_df[base_df['Source_Sheet'].astype(str).str.upper() == 'EXPORT']
 
-            normal_x_df = filtered_df[filtered_df[x_col] >= min_outlier_limit_x]
-            if not normal_x_df.empty:
-                robust_avg_x = normal_x_df[x_col].mean()
-            else:
-                robust_avg_x = filtered_df[x_col].mean()
-
-            if pd.isna(robust_avg_x) or robust_avg_x <= 0:
-                robust_avg_x = 100.0
-
-            def_x_low = robust_avg_x * (2.0 / 3.0)
-            def_x_high = robust_avg_x * (4.0 / 3.0)
-
-            x_max_raw = filtered_df[x_col].max()
-            x_min_raw = filtered_df[x_col].min()
-            x_span_raw = x_max_raw - x_min_raw if x_max_raw != x_min_raw else robust_avg_x
-
-            plot_x_min = x_min_raw - (abs(x_span_raw) * 0.05)
-            if x_min_raw < 0:
-                plot_x_min = x_min_raw - (abs(x_span_raw) * 0.05)
-            plot_x_max = x_max_raw + (abs(x_span_raw) * 0.05)
-
-            y_min_raw = filtered_df[y_col].min()
-            y_max_raw = filtered_df[y_col].max()
-            y_span_raw = y_max_raw - y_min_raw if y_max_raw != y_min_raw else 100.0
-
-            plot_y_min = y_min_raw - (y_span_raw * 0.05)
-            plot_y_max = max(y_max_raw, def_y_high * 1.5) + (y_span_raw * 0.05)
-            plot_y_min = min(plot_y_min, def_y_low - (def_y_low * 0.5))
-            plot_y_max = max(plot_y_max, def_y_high + (def_y_high * 0.5))
+        positive_base = base_df[base_df[margin_val_col] >= 0]
+        if not positive_base.empty and positive_base['Gross Sales (Current)'].sum() > 0:
+            avg_y = (positive_base[margin_val_col].sum() / positive_base['Gross Sales (Current)'].sum()) * 100
         else:
-            def_y_low, def_y_high = 16.67, 33.33
-            def_x_low, def_x_high = 66.67, 133.33
-            robust_avg_x, avg_margin_pct = 100.0, 25.0
-            plot_x_min, plot_x_max, plot_y_min, plot_y_max = -5, 200, -20, 50
+            avg_y = base_df[y_col].mean() if not base_df.empty else 25.0
+
+        if pd.isna(avg_y) or avg_y <= 0: avg_y = 1.0
+
+        normal_x_base = base_df[base_df[x_col] >= min_outlier_limit_x]
+        if not normal_x_base.empty:
+            robust_avg_x = normal_x_base[x_col].mean()
+        else:
+            robust_avg_x = base_df[x_col].mean() if not base_df.empty else 100.0
+
+        if pd.isna(robust_avg_x) or robust_avg_x <= 0: robust_avg_x = 100.0
+
+        def_y_low = avg_y * (2.0 / 3.0)
+        def_y_high = avg_y * (4.0 / 3.0)
+        def_x_low = robust_avg_x * (2.0 / 3.0)
+        def_x_high = robust_avg_x * (4.0 / 3.0)
 
         with st.form("threshold_form"):
-            st.info(
-                "💡 **INFO:** The X and Y axes use the dynamic Midpoint value as the absolute center point based on your custom Low and High thresholds. The Center lines are marked in Red.")
-
             parent_view_mode = "Common" if view_mode in ["Common (Consolidated Master SKUs)",
                                                          "Commonized Only (Master C- Prefix SKUs)"] else "Uncommon"
-            filter_state_str = f"{parent_view_mode}_{market_filter}_{margin_selector}_{x_axis_selector}_{remark_filter}_{status_filter}_{sku_search}_{min_outlier_limit_x}"
+            filter_state_str = f"{parent_view_mode}_{market_filter}_{margin_selector}_{x_axis_selector}_{remark_filter}_{status_filter}_{sku_search}_{min_outlier_limit_x}_{baseline_selector}"
             form_key_suffix = hashlib.md5(filter_state_str.encode('utf-8')).hexdigest()
 
             step_x_input = float(abs(def_x_high - def_x_low) / 2) if def_x_high != def_x_low else 1.0
@@ -698,6 +695,28 @@ def main():
         # Override the center with the user's explicit midpoints
         avg_y = (y_low_thresh + y_high_thresh) / 2.0
         robust_avg_x = (x_low_thresh + x_high_thresh) / 2.0
+
+        # Plot boundaries based strictly on actual plotted data
+        if not filtered_df.empty:
+            x_max_raw = filtered_df[x_col].max()
+            x_min_raw = filtered_df[x_col].min()
+            x_span_raw = x_max_raw - x_min_raw if x_max_raw != x_min_raw else robust_avg_x
+
+            plot_x_min = x_min_raw - (abs(x_span_raw) * 0.05)
+            if x_min_raw < 0:
+                plot_x_min = x_min_raw - (abs(x_span_raw) * 0.05)
+            plot_x_max = x_max_raw + (abs(x_span_raw) * 0.05)
+
+            y_min_raw = filtered_df[y_col].min()
+            y_max_raw = filtered_df[y_col].max()
+            y_span_raw = y_max_raw - y_min_raw if y_max_raw != y_min_raw else 100.0
+
+            plot_y_min = y_min_raw - (y_span_raw * 0.05)
+            plot_y_max = max(y_max_raw, def_y_high * 1.5) + (y_span_raw * 0.05)
+            plot_y_min = min(plot_y_min, def_y_low - (def_y_low * 0.5))
+            plot_y_max = max(plot_y_max, def_y_high + (def_y_high * 0.5))
+        else:
+            plot_x_min, plot_x_max, plot_y_min, plot_y_max = -5, 200, -20, 50
 
         if filtered_df.empty:
             st.error("No data found matching the selected filters.")
@@ -786,8 +805,8 @@ def main():
 
             def format_x_val_str(val):
                 if x_axis_selector == "Qty Growth (%)": return f"{val:.1f}%"
-                if val >= 1e9 or val <= -1e9: return f"Rp{val / 1e9:,.1f}Bn"
-                return f"Rp{val / 1e6:,.0f}M"
+                if val >= 1e9 or val <= -1e9: return f"Rp{val / 1e9:,.1f}M"
+                return f"Rp{val / 1e6:,.0f}Jt"
 
             x_format = ':.2f' if x_axis_selector == 'Qty Growth (%)' else ':,.0f'
 
@@ -841,10 +860,10 @@ def main():
                           annotation_text=f"High ({y_high_thresh:.1f}%)", annotation_position="top right")
 
             fig.add_vline(x=apply_custom_x_scale(robust_avg_x), line_dash="dot", line_color="red", line_width=2,
-                          opacity=0.6, annotation_text=f" ← AVG X ({format_x_val_str(robust_avg_x)})",
+                          opacity=0.6, annotation_text=f" ← Center X ({format_x_val_str(robust_avg_x)})",
                           annotation_position="top right", annotation_font_color="red")
             fig.add_hline(y=avg_y, line_dash="dot", line_color="red", line_width=2, opacity=0.6,
-                          annotation_text=f"AVG Y ({avg_y:.1f}%)", annotation_position="top right",
+                          annotation_text=f"Center Y ({avg_y:.1f}%)", annotation_position="top right",
                           annotation_font_color="red")
 
             mapped_plot_x_min = apply_custom_x_scale(plot_x_min)
@@ -1430,10 +1449,10 @@ def main():
 
                             fig_p.add_vline(x=apply_custom_x_scale(robust_avg_x), line_dash="dot", line_color="red",
                                             line_width=2, opacity=0.6,
-                                            annotation_text=f" ← AVG X ({format_x_val_str(robust_avg_x)})",
+                                            annotation_text=f" ← Center X ({format_x_val_str(robust_avg_x)})",
                                             annotation_position="top right", annotation_font_color="red")
-                            fig_p.add_hline(y=avg_margin_pct, line_dash="dot", line_color="red", line_width=2,
-                                            opacity=0.6, annotation_text=f"AVG Y ({avg_margin_pct:.1f}%)",
+                            fig_p.add_hline(y=avg_y, line_dash="dot", line_color="red", line_width=2,
+                                            opacity=0.6, annotation_text=f"Center Y ({avg_y:.1f}%)",
                                             annotation_position="top right", annotation_font_color="red")
 
                             for box_name, coords in box_coords.items():
@@ -2045,16 +2064,17 @@ def main():
             st.markdown("---")
             st.markdown("### 📋 Financial Outlook: P&L Monitoring (Surviving SKUs)")
             st.info(
-                "💡 Upload **3 separate CSV files**. The system uses the **Base P&L Data** to establish the initial benchmark (full historical granularity), and applies the **SKU Mapping File** to the **Quarterly P&L Data** to project the consolidated Phase 5 performance.")
+                "💡 Upload **4 separate CSV files**. The system applies the **SKU Mapping File** to the **Quarterly P&L Data** for projections. **Top-Level Add-Backs** for D&A (COGS and General) are retrieved directly from your **Depreciation Data** file and allocated proportionally to each SKU based on its Gross Sales.")
 
-            col_up1, col_up2, col_up3 = st.columns(3)
+            col_up1, col_up2 = st.columns(2)
             with col_up1:
                 pl_base_file = st.file_uploader("1. Base P&L Data (.csv)", type=["csv"], key="pl_base_up")
+                pl_map_file = st.file_uploader("3. SKU Mapping (.csv)", type=["csv"], key="pl_map_up")
             with col_up2:
                 pl_proj_file = st.file_uploader("2. Quarterly P&L Data (.csv)", type=["csv"], key="pl_proj_up")
-            with col_up3:
-                pl_map_file = st.file_uploader("3. SKU Mapping (.csv)", type=["csv"], key="pl_map_up")
+                cogs_depr_file = st.file_uploader("4. Depreciation Data (.csv)", type=["csv"], key="cogs_depr_up")
 
+            st.markdown("#### ⚙️ Projection Settings")
             col_opt1, col_opt2 = st.columns(2)
             with col_opt1:
                 target_gm_pct = st.number_input(
@@ -2075,7 +2095,7 @@ def main():
                     help="Input a percentage to simulate COGS efficiency across all surviving SKUs (e.g., enter -2.0 to reduce COGS by 2%)."
                 )
 
-            if pl_base_file is not None and pl_proj_file is not None and pl_map_file is not None:
+            if pl_base_file is not None and pl_proj_file is not None and pl_map_file is not None and cogs_depr_file is not None:
                 try:
                     # 0. READ MAPPING FILE AND CREATE DICTIONARIES
                     df_map = pd.read_csv(pl_map_file, sep=None, engine='python', dtype=str)
@@ -2092,9 +2112,42 @@ def main():
                     dict_code = dict(zip(df_map[col_pk], df_map[col_nc]))
                     dict_name = dict(zip(df_map[col_pk], df_map[col_npn]))
 
+                    # 1. READ DEPRECIATION FILE (COGS & GENERAL)
+                    df_depr_upload = pd.read_csv(cogs_depr_file, sep=None, engine='python')
+
+                    def clean_currency_str(x):
+                        if pd.isna(x): return 0.0
+                        x_str = str(x).strip().replace('.', '').replace(',', '.')
+                        try:
+                            return float(x_str)
+                        except:
+                            return 0.0
+
+                    df_depr_upload.columns = df_depr_upload.columns.str.strip()
+                    col_period = df_depr_upload.columns[0]
+
+                    # Detect columns robustly based on keywords
+                    cogs_col = next((c for c in df_depr_upload.columns if 'cogs' in c.lower() or 'cost' in c.lower()),
+                                    None)
+                    if cogs_col is None and len(df_depr_upload.columns) > 1: cogs_col = df_depr_upload.columns[1]
+
+                    gen_col = next((c for c in df_depr_upload.columns if
+                                    'gen' in c.lower() or 'admin' in c.lower() or 'oper' in c.lower()), None)
+                    if gen_col is None and len(df_depr_upload.columns) > 2:
+                        gen_col = df_depr_upload.columns[2]
+                    elif gen_col is None:
+                        gen_col = cogs_col  # Fallback
+
+                    df_depr_upload['Period_Str'] = df_depr_upload[col_period].astype(str).str.strip()
+                    df_depr_upload['COGS_Amt'] = df_depr_upload[cogs_col].apply(clean_currency_str)
+                    df_depr_upload['Gen_Amt'] = df_depr_upload[gen_col].apply(clean_currency_str)
+
+                    dict_depr_cogs = dict(zip(df_depr_upload['Period_Str'], df_depr_upload['COGS_Amt']))
+                    dict_depr_gen = dict(zip(df_depr_upload['Period_Str'], df_depr_upload['Gen_Amt']))
+
                     # HELPER FUNCTION TO LOAD AND CLEAN P&L DATA
                     def load_and_clean_pl(file, apply_mapping=False):
-                        # 1. READ FILE AS TEXT FOR IDENTITY COLUMNS TO PREVENT SCIENTIFIC NOTATION
+                        # READ FILE AS TEXT FOR IDENTITY COLUMNS TO PREVENT SCIENTIFIC NOTATION
                         df = pd.read_csv(file, sep=';', dtype=str)
                         if len(df.columns) == 1:
                             file.seek(0)
@@ -2102,7 +2155,7 @@ def main():
 
                         df.columns = df.columns.str.strip()
 
-                        # 2. TEXT DATA CLEANSING
+                        # TEXT DATA CLEANSING
                         text_cols_pl = ['Produk_Key', 'Product Name', 'Brand', 'Series', 'Segmentation', 'Category',
                                         'Market', 'Month', 'Year']
                         for c in text_cols_pl:
@@ -2110,17 +2163,7 @@ def main():
                                 df[c] = df[c].astype(str).str.replace(r'\.0$', '', regex=True).str.strip().replace(
                                     ['nan', 'NaN', 'None'], '')
 
-                        # 3. NUMERIC DATA CLEANSING (Handling Currency Formats)
-                        def clean_currency(x):
-                            if pd.isna(x): return 0.0
-                            x_str = str(x).strip()
-                            if x_str in ['-', '']: return 0.0
-                            x_str = x_str.replace('.', '').replace(',', '.')
-                            try:
-                                return float(x_str)
-                            except:
-                                return 0.0
-
+                        # NUMERIC DATA CLEANSING (Handling Currency Formats)
                         cols_to_clean = [
                             'Gross Sales', 'Sales Return', 'Sales Deduction', 'Net Sales', 'Total COGS', 'COGS_Regular',
                             'Royalty', 'Gross Profit',
@@ -2135,7 +2178,24 @@ def main():
                         ]
                         for c in cols_to_clean:
                             if c in df.columns:
-                                df[c] = df[c].apply(clean_currency)
+                                df[c] = df[c].apply(clean_currency_str)
+
+                        # DYNAMIC YYYYMM MAPPING FOR DEPRECIATION LOOKUP
+                        if 'Month' in df.columns and 'Year' in df.columns:
+                            df['Month_Str'] = df['Month'].astype(str).str.strip().str.capitalize()
+                            df['Year_Num'] = pd.to_numeric(df['Year'], errors='coerce')
+                            month_map_num = {'January': 1, 'February': 2, 'March': 3, 'April': 4, 'May': 5, 'June': 6,
+                                             'July': 7, 'August': 8, 'September': 9, 'October': 10, 'November': 11,
+                                             'December': 12}
+                            month_map_str = {'January': '01', 'February': '02', 'March': '03', 'April': '04',
+                                             'May': '05', 'June': '06', 'July': '07', 'August': '08', 'September': '09',
+                                             'October': '10', 'November': '11', 'December': '12'}
+
+                            df['Month_Num'] = df['Month_Str'].map(month_map_num).fillna(1)
+                            df['YYYYMM'] = df['Year_Num'].fillna(0).astype(int).astype(str) + df['Month_Str'].map(
+                                month_map_str)
+                        else:
+                            df['YYYYMM'] = 'UNKNOWN'
 
                         # INJECT MAPPING INTO P&L DATA VIA ABSOLUTE PRODUCT KEY (ONLY IF REQUESTED)
                         if apply_mapping:
@@ -2156,11 +2216,6 @@ def main():
 
                     # 4. CHRONOLOGICAL QUARTER MAPPING FOR PROJECTED DATA
                     if 'Month' in df_pl_proj.columns and 'Year' in df_pl_proj.columns:
-                        df_pl_proj['Month_Str'] = df_pl_proj['Month'].astype(str).str.strip().str.capitalize()
-                        df_pl_proj['Year_Num'] = pd.to_numeric(df_pl_proj['Year'], errors='coerce').fillna(2000)
-
-                        df_pl_proj['Month_Num'] = pd.to_datetime(df_pl_proj['Month_Str'], format='%B',
-                                                                 errors='coerce').dt.month.fillna(1)
                         unique_periods = df_pl_proj[
                             ['Year_Num', 'Month_Num', 'Month_Str']].drop_duplicates().sort_values(
                             by=['Year_Num', 'Month_Num'])
@@ -2232,7 +2287,7 @@ def main():
                         if 'Gross Profit' in df_proj.columns:
                             df_proj['Gross Profit'] += row_gs_delta
 
-                    # 7. CORE CALCULATION ENGINE
+                    # 7. CORE CALCULATION ENGINE (Top-Level Addbacks from CSV)
                     sga_cols = [
                         'Selling Activity Expenses', 'Travelling Expenses', 'Others Expenses', 'Selling Personnel',
                         'Export Selling Activity', 'Export Marketing Support', 'Export Transportation',
@@ -2243,7 +2298,12 @@ def main():
                         'Education', 'Entertainment', 'Sundry Expenses', 'Depreciation/Amortisation'
                     ]
 
-                    def calculate_metrics(df_source):
+                    selling_expense_cols = [
+                        'Selling Activity Expenses', 'Export Selling Activity', 'Export Transportation',
+                        'Export Marketing'
+                    ]
+
+                    def calculate_metrics(df_source, is_base=False, reference_df=None):
                         res = {}
                         res['Calc_Gross_Sales'] = df_source.get('Gross Sales', 0).sum()
                         res['Calc_Sales_Ded'] = df_source.get('Sales Deduction', 0).sum() + df_source.get(
@@ -2260,7 +2320,17 @@ def main():
                             if c in df_source.columns:
                                 sga_sum += df_source[c].sum()
                         res['Calc_SGA'] = abs(sga_sum)
-                        res['Calc_DA'] = abs(df_source.get('Depreciation/Amortisation', 0).sum())
+
+                        # Direct sum from CSV for Top-Level
+                        if is_base and reference_df is not None:
+                            unique_periods = reference_df['YYYYMM'].unique()
+                            res['Calc_DA_Gen'] = sum(dict_depr_gen.get(p, 0.0) for p in unique_periods)
+                            res['Calc_DA_COGS'] = sum(dict_depr_cogs.get(p, 0.0) for p in unique_periods)
+                        else:
+                            unique_periods = df_source['YYYYMM'].unique()
+                            res['Calc_DA_Gen'] = sum(dict_depr_gen.get(p, 0.0) for p in unique_periods)
+                            res['Calc_DA_COGS'] = sum(dict_depr_cogs.get(p, 0.0) for p in unique_periods)
+
                         return pd.Series(res)
 
                     def get_gm_ratio(df_source):
@@ -2270,7 +2340,7 @@ def main():
                         return gm / gs
 
                     # 8. AGGREGATION & FINAL TABLE PREPARATION
-                    base_metrics = calculate_metrics(df_pl_base)
+                    base_metrics = calculate_metrics(df_pl_base, is_base=True, reference_df=df_proj)
 
                     quarters = ['Q1', 'Q2', 'Q3', 'Q4']
                     q_metrics = {}
@@ -2301,10 +2371,11 @@ def main():
                     r_ap = get_row('Calc_AP')
                     r_rd = get_row('Calc_RD')
                     r_sga = get_row('Calc_SGA')
-                    r_da = get_row('Calc_DA')
+                    r_da_gen = get_row('Calc_DA_Gen')
+                    r_da_cogs = get_row('Calc_DA_COGS')
 
                     r_ebit = r_gp - r_ap - r_rd - r_sga
-                    r_ebitda = r_ebit + r_da
+                    r_ebitda = r_ebit + r_da_gen + r_da_cogs
 
                     r_gm_ratio = {
                         'Base': get_gm_ratio(df_pl_base),
@@ -2340,7 +2411,9 @@ def main():
                             ap = abs(x.get('Advertising Activity', 0).sum())
                             rd = abs(x.get('Research & Analysis Expenses', 0).sum())
                             sga = abs(sum(x.get(c, 0).sum() for c in sga_cols if c in x.columns))
-                            da = abs(x.get('Depreciation/Amortisation', 0).sum())
+
+                            selling_exp = abs(sum(x.get(c, 0).sum() for c in selling_expense_cols if c in x.columns))
+                            cm_custom = gp_pl - ap - selling_exp
 
                             return pd.Series({
                                 'Gross Sales': gs_pure,
@@ -2348,13 +2421,15 @@ def main():
                                 'Net Sales': ns,
                                 '(-) Cost of Sales': total_cogs,
                                 'Gross Profit': gp_pl,
+                                'Ratio Gross Profit': (gp_pl / gs_net) if gs_net != 0 else 0,
+                                'Gross Margin': gm_custom,
+                                'Ratio Gross Margin': (gm_custom / gs_net) if gs_net != 0 else 0,
                                 '(-) A&P': ap,
                                 '(-) R&D': rd,
                                 '(-) Other SG&A': sga,
+                                'Contribution Margin': cm_custom,
+                                'Ratio Contribution Margin': (cm_custom / gs_net) if gs_net != 0 else 0,
                                 'EBIT': gp_pl - ap - rd - sga,
-                                '(+) D&A': da,
-                                'EBITDA': gp_pl - ap - rd - sga + da,
-                                'Ratio Gross Margin': (gm_custom / gs_net) if gs_net != 0 else 0
                             })
 
                         res = df_source.groupby(group_keys).apply(calc_row).reset_index()
@@ -2363,10 +2438,37 @@ def main():
                         # Standardize columns to merge cleanly with projected data
                         if 'Produk_Key' in res.columns:
                             res.rename(columns={'Produk_Key': 'SKU'}, inplace=True)
+
+                        # PROPORTIONAL ALLOCATION OF DEPRECIATION BASED ON GROSS SALES
+                        total_da_gen = r_da_gen['Base'] * 1e9
+                        total_da_cogs = r_da_cogs['Base'] * 1e9
+
+                        total_gs = res['Gross Sales'].sum()
+                        if total_gs != 0:
+                            res['(+) D&A - General Expenses'] = (res['Gross Sales'] / total_gs) * total_da_gen
+                            res['(+) D&A - Cost of Sales'] = (res['Gross Sales'] / total_gs) * total_da_cogs
+                        else:
+                            res['(+) D&A - General Expenses'] = 0.0
+                            res['(+) D&A - Cost of Sales'] = 0.0
+
+                        res['EBITDA'] = res['EBIT'] + res['(+) D&A - General Expenses'] + res['(+) D&A - Cost of Sales']
+
                         return res
 
                     # 9B. PROJECTED details map directly to exactly 663 Master SKUs
-                    def get_sku_details_proj(df_source, period_name):
+                    def get_sku_details_proj(df_source, period_name, ref_q=None):
+
+                        # Target Top-Level Add-Back
+                        if ref_q == 'FY':
+                            total_da_gen = r_da_gen['FY'] * 1e9
+                            total_da_cogs = r_da_cogs['FY'] * 1e9
+                        elif ref_q:
+                            total_da_gen = r_da_gen[ref_q] * 1e9
+                            total_da_cogs = r_da_cogs[ref_q] * 1e9
+                        else:
+                            total_da_gen = 0.0
+                            total_da_cogs = 0.0
+
                         def calc_row(x):
                             gs_pure = x.get('Gross Sales', 0).sum()
                             sales_ded_tot = x.get('Sales Deduction', 0).sum() + x.get('Sales Return', 0).sum()
@@ -2382,7 +2484,9 @@ def main():
                             ap = abs(x.get('Advertising Activity', 0).sum())
                             rd = abs(x.get('Research & Analysis Expenses', 0).sum())
                             sga = abs(sum(x.get(c, 0).sum() for c in sga_cols if c in x.columns))
-                            da = abs(x.get('Depreciation/Amortisation', 0).sum())
+
+                            selling_exp = abs(sum(x.get(c, 0).sum() for c in selling_expense_cols if c in x.columns))
+                            cm_custom = gp_pl - ap - selling_exp
 
                             return pd.Series({
                                 'Gross Sales': gs_pure,
@@ -2390,20 +2494,24 @@ def main():
                                 'Net Sales': ns,
                                 '(-) Cost of Sales': total_cogs,
                                 'Gross Profit': gp_pl,
+                                'Ratio Gross Profit': (gp_pl / gs_net) if gs_net != 0 else 0,
+                                'Gross Margin': gm_custom,
+                                'Ratio Gross Margin': (gm_custom / gs_net) if gs_net != 0 else 0,
                                 '(-) A&P': ap,
                                 '(-) R&D': rd,
                                 '(-) Other SG&A': sga,
+                                'Contribution Margin': cm_custom,
+                                'Ratio Contribution Margin': (cm_custom / gs_net) if gs_net != 0 else 0,
                                 'EBIT': gp_pl - ap - rd - sga,
-                                '(+) D&A': da,
-                                'EBITDA': gp_pl - ap - rd - sga + da,
-                                'Ratio Gross Margin': (gm_custom / gs_net) if gs_net != 0 else 0
                             })
 
                         if df_source.empty:
                             res_final = surviving_masters_df.copy()
                             for col in ['Gross Sales', 'Sales Deductions', 'Net Sales', '(-) Cost of Sales',
-                                        'Gross Profit', '(-) A&P', '(-) R&D', '(-) Other SG&A', 'EBIT', '(+) D&A',
-                                        'EBITDA', 'Ratio Gross Margin']:
+                                        'Gross Profit', 'Ratio Gross Profit', 'Gross Margin', 'Ratio Gross Margin',
+                                        '(-) A&P', '(-) R&D', '(-) Other SG&A', 'Contribution Margin',
+                                        'Ratio Contribution Margin', 'EBIT', '(+) D&A - General Expenses',
+                                        '(+) D&A - Cost of Sales', 'EBITDA']:
                                 res_final[col] = 0.0
                             res_final.insert(0, 'Period', period_name)
                             res_final.rename(columns={'New Code': 'SKU', 'New Product Name': 'Product Name'},
@@ -2417,17 +2525,39 @@ def main():
                         res_final = surviving_masters_df.merge(res, on='New Product Name', how='left').fillna(0.0)
                         res_final.insert(0, 'Period', period_name)
                         res_final.rename(columns={'New Code': 'SKU', 'New Product Name': 'Product Name'}, inplace=True)
+
+                        # PROPORTIONAL ALLOCATION OF DEPRECIATION BASED ON GROSS SALES
+                        total_gs = res_final['Gross Sales'].sum()
+                        if total_gs != 0:
+                            res_final['(+) D&A - General Expenses'] = (res_final[
+                                                                           'Gross Sales'] / total_gs) * total_da_gen
+                            res_final['(+) D&A - Cost of Sales'] = (res_final['Gross Sales'] / total_gs) * total_da_cogs
+                        else:
+                            res_final['(+) D&A - General Expenses'] = 0.0
+                            res_final['(+) D&A - Cost of Sales'] = 0.0
+
+                        res_final['EBITDA'] = res_final['EBIT'] + res_final['(+) D&A - General Expenses'] + res_final[
+                            '(+) D&A - Cost of Sales']
+
                         return res_final
 
                     details_base = get_sku_details_base(df_pl_base)
-                    details_q1 = get_sku_details_proj(df_proj[df_proj['Quarter'] == 'Q1'], 'Q3 2026')
-                    details_q2 = get_sku_details_proj(df_proj[df_proj['Quarter'] == 'Q2'], 'Q4 2026')
-                    details_q3 = get_sku_details_proj(df_proj[df_proj['Quarter'] == 'Q3'], 'Q1 2027')
-                    details_q4 = get_sku_details_proj(df_proj[df_proj['Quarter'] == 'Q4'], 'Q2 2027')
-                    details_fy = get_sku_details_proj(df_proj, 'FY')
+                    details_q1 = get_sku_details_proj(df_proj[df_proj['Quarter'] == 'Q1'], 'Q3 2026', 'Q1')
+                    details_q2 = get_sku_details_proj(df_proj[df_proj['Quarter'] == 'Q2'], 'Q4 2026', 'Q2')
+                    details_q3 = get_sku_details_proj(df_proj[df_proj['Quarter'] == 'Q3'], 'Q1 2027', 'Q3')
+                    details_q4 = get_sku_details_proj(df_proj[df_proj['Quarter'] == 'Q4'], 'Q2 2027', 'Q4')
+                    details_fy = get_sku_details_proj(df_proj, 'FY', 'FY')
 
                     df_all_details = pd.concat(
                         [details_base, details_q1, details_q2, details_q3, details_q4, details_fy], ignore_index=True)
+
+                    # Reorder columns identically to align properly
+                    final_cols_order = ['Period', 'Market', 'SKU', 'Product Name', 'Gross Sales', 'Sales Deductions',
+                                        'Net Sales', '(-) Cost of Sales', 'Gross Profit', 'Ratio Gross Profit',
+                                        'Gross Margin', 'Ratio Gross Margin', '(-) A&P', '(-) R&D', '(-) Other SG&A',
+                                        'Contribution Margin', 'Ratio Contribution Margin', 'EBIT',
+                                        '(+) D&A - General Expenses', '(+) D&A - Cost of Sales', 'EBITDA']
+                    df_all_details = df_all_details[[c for c in final_cols_order if c in df_all_details.columns]]
 
                     # 10. HTML INJECTION FOR CORPORATE TABLE AESTHETICS
                     def fmt(val):
@@ -2474,7 +2604,8 @@ def main():
                         <tr><td colspan='7'></td></tr>
                         <tr class='pl-bold-row'><td>EBIT</td><td>{fmt(r_ebit['Base'])}</td><td>{fmt(r_ebit['Q1'])}</td><td>{fmt(r_ebit['Q2'])}</td><td>{fmt(r_ebit['Q3'])}</td><td>{fmt(r_ebit['Q4'])}</td><td>{fmt(r_ebit['FY'])}</td></tr>
                         <tr><td colspan='7'></td></tr>
-                        <tr><td>(+) D&A</td><td>{fmt(r_da['Base'])}</td><td>{fmt(r_da['Q1'])}</td><td>{fmt(r_da['Q2'])}</td><td>{fmt(r_da['Q3'])}</td><td>{fmt(r_da['Q4'])}</td><td>{fmt(r_da['FY'])}</td></tr>
+                        <tr><td>(+) D&A - General Expenses</td><td>{fmt(r_da_gen['Base'])}</td><td>{fmt(r_da_gen['Q1'])}</td><td>{fmt(r_da_gen['Q2'])}</td><td>{fmt(r_da_gen['Q3'])}</td><td>{fmt(r_da_gen['Q4'])}</td><td>{fmt(r_da_gen['FY'])}</td></tr>
+                        <tr><td>(+) D&A - Cost of Sales</td><td>{fmt(r_da_cogs['Base'])}</td><td>{fmt(r_da_cogs['Q1'])}</td><td>{fmt(r_da_cogs['Q2'])}</td><td>{fmt(r_da_cogs['Q3'])}</td><td>{fmt(r_da_cogs['Q4'])}</td><td>{fmt(r_da_cogs['FY'])}</td></tr>
                         <tr><td colspan='7'></td></tr>
                         <tr class='pl-bold-row'><td>EBITDA</td><td>{fmt(r_ebitda['Base'])}</td><td>{fmt(r_ebitda['Q1'])}</td><td>{fmt(r_ebitda['Q2'])}</td><td>{fmt(r_ebitda['Q3'])}</td><td>{fmt(r_ebitda['Q4'])}</td><td>{fmt(r_ebitda['FY'])}</td></tr>
                         <tr><td colspan='7'></td></tr>
@@ -2509,7 +2640,11 @@ def main():
                         ['', None, None, None, None, None, None],
                         ['EBIT', r_ebit['Base'], r_ebit['Q1'], r_ebit['Q2'], r_ebit['Q3'], r_ebit['Q4'], r_ebit['FY']],
                         ['', None, None, None, None, None, None],
-                        ['(+) D&A', r_da['Base'], r_da['Q1'], r_da['Q2'], r_da['Q3'], r_da['Q4'], r_da['FY']],
+                        ['(+) D&A - General Expenses', r_da_gen['Base'], r_da_gen['Q1'], r_da_gen['Q2'], r_da_gen['Q3'],
+                         r_da_gen['Q4'], r_da_gen['FY']],
+                        ['', None, None, None, None, None, None],
+                        ['(+) D&A - Cost of Sales', r_da_cogs['Base'], r_da_cogs['Q1'], r_da_cogs['Q2'],
+                         r_da_cogs['Q3'], r_da_cogs['Q4'], r_da_cogs['FY']],
                         ['', None, None, None, None, None, None],
                         ['EBITDA', r_ebitda['Base'], r_ebitda['Q1'], r_ebitda['Q2'], r_ebitda['Q3'], r_ebitda['Q4'],
                          r_ebitda['FY']],
@@ -2542,11 +2677,11 @@ def main():
                             'align': 'center', 'valign': 'vcenter', 'font_size': 14
                         })
                         data_format = workbook.add_format({
-                            'num_format': '#,##0.1;-#,##0.1;"-"', 'border': 1, 'border_color': '#b4c6e7',
+                            'num_format': '#,##0.0;-#,##0.0;"-"', 'border': 1, 'border_color': '#b4c6e7',
                             'valign': 'vcenter'
                         })
                         data_format_bold = workbook.add_format({
-                            'bold': True, 'num_format': '#,##0.1;-#,##0.1;"-"', 'border': 1, 'border_color': '#b4c6e7',
+                            'bold': True, 'num_format': '#,##0.0;-#,##0.0;"-"', 'border': 1, 'border_color': '#b4c6e7',
                             'valign': 'vcenter', 'top': 2, 'bottom': 2, 'top_color': '#4472c4',
                             'bottom_color': '#4472c4'
                         })
@@ -2576,8 +2711,8 @@ def main():
                             else:
                                 worksheet.write(1, col_num, value, header_format)
 
-                        bold_rows = [2, 5, 13, 17]
-                        ratio_row = 19
+                        bold_rows = [2, 5, 13, 19]
+                        ratio_row = 21
 
                         for row_num, row_data in enumerate(df_export_pl.values):
                             is_bold = row_num in bold_rows
@@ -2609,7 +2744,7 @@ def main():
                         df_all_details.to_excel(writer, index=False, sheet_name='SKU_Details')
                         ws_det = writer.sheets['SKU_Details']
 
-                        num_fmt = workbook.add_format({'num_format': '#,##0', 'border': 1, 'border_color': '#d1d5db'})
+                        num_fmt = workbook.add_format({'num_format': '#,##0.0', 'border': 1, 'border_color': '#d1d5db'})
                         pct_fmt = workbook.add_format(
                             {'num_format': '0.0%', 'border': 1, 'border_color': '#d1d5db', 'align': 'center',
                              'bold': True})
@@ -2623,7 +2758,7 @@ def main():
                                 ws_det.set_column(col_idx, col_idx, 15)
                             elif col_name in ['SKU', 'Product Name']:
                                 ws_det.set_column(col_idx, col_idx, 35)
-                            elif col_name == 'Ratio Gross Margin':
+                            elif col_name in ['Ratio Gross Margin', 'Ratio Gross Profit', 'Ratio Contribution Margin']:
                                 ws_det.set_column(col_idx, col_idx, 18, pct_fmt)
                             else:
                                 ws_det.set_column(col_idx, col_idx, 18, num_fmt)
@@ -2631,6 +2766,7 @@ def main():
                         for col_num, value in enumerate(df_all_details.columns.values):
                             ws_det.write(0, col_num, value, hdr_det_format)
 
+                    # SUDAH DIMASUKAN KE DALAM BLOK TRY DENGAN BENAR
                     col_dl_pl1, _ = st.columns([1, 4])
                     with col_dl_pl1:
                         st.download_button(
@@ -2650,21 +2786,57 @@ def main():
                     st.info(
                         "💡 **Interactive Forecasting**: Visualize your SKUs across different periods. The 9-Box distribution dynamically shifts based on your Target Gross Margin and COGS Efficiency settings.")
 
-                    period_to_plot = st.selectbox(
-                        "Select Period to Visualize:",
-                        ["Base", "Q3 2026", "Q4 2026", "Q1 2027", "Q2 2027", "FY"],
-                        help="Select 'Base' to view the historical unadjusted dataset (all SKUs), or any subsequent period to view the dynamically adjusted 663 surviving SKUs."
-                    )
+                    col_fsel1, col_fsel2, col_fsel3 = st.columns(3)
+                    with col_fsel1:
+                        period_to_plot = st.selectbox(
+                            "Select Period to Visualize:",
+                            ["Base", "Q3 2026", "Q4 2026", "Q1 2027", "Q2 2027", "FY"],
+                            help="Select 'Base' to view the historical unadjusted dataset (all SKUs), or any subsequent period to view the dynamically adjusted 663 surviving SKUs."
+                        )
+                    with col_fsel2:
+                        market_filter_f = st.selectbox(
+                            "Select Market Focus:",
+                            ["ALL (Local + Export)", "LOCAL", "EXPORT"],
+                            key="market_filter_f",
+                            help="Filter the forecast visualization by Market."
+                        )
+                    with col_fsel3:
+                        margin_selector_f = st.selectbox(
+                            "Y-Axis Metric (Margin):",
+                            ["Gross Profit", "Gross Margin", "Contribution Margin"],
+                            index=1,
+                            key="margin_selector_f"
+                        )
 
                     plot_df_f = df_all_details[df_all_details['Period'] == period_to_plot].copy()
 
+                    if market_filter_f != "ALL (Local + Export)":
+                        plot_df_f = plot_df_f[plot_df_f['Market'].astype(str).str.upper() == market_filter_f]
+
                     if not plot_df_f.empty:
-                        plot_df_f['Gross Margin (%)'] = plot_df_f['Ratio Gross Margin'] * 100
+
+                        if margin_selector_f == "Gross Margin":
+                            y_val_col_f = 'Ratio Gross Margin'
+                        elif margin_selector_f == "Gross Profit":
+                            y_val_col_f = 'Ratio Gross Profit'
+                        else:
+                            y_val_col_f = 'Ratio Contribution Margin'
+
+                        plot_df_f['Y_Val'] = plot_df_f[y_val_col_f] * 100
                         plot_df_f['X_Val'] = plot_df_f['Gross Sales']
-                        plot_df_f['Y_Val'] = plot_df_f['Gross Margin (%)']
                         plot_df_f['Bubble_Size'] = plot_df_f['Gross Sales'].abs().replace(0, 1)
 
-                        st.markdown("#### 🎚️ Smart-Scaling & Outlier Control (Forecast)")
+                        st.markdown("#### 🎚️ Smart-Scaling & Baseline Control (Forecast)")
+
+                        st.info(
+                            "💡 **INFO:** The X and Y axes use the calculated Average from your selected population below as the absolute center point. The Center lines are marked in Red.")
+
+                        baseline_selector_f = st.radio(
+                            "Calculate Average (Center Line) Baseline from:",
+                            ["ALL Market", "LOCAL Only", "EXPORT Only"],
+                            horizontal=True,
+                            key="forecast_baseline"
+                        )
 
                         col_fout1, col_fout2 = st.columns(2)
                         with col_fout1:
@@ -2686,38 +2858,47 @@ def main():
                                 help="Set to 1.0 to view the original scale. Set < 1.0 (e.g., 0.2) to shrink the right-side boxes so the left and middle boxes get more screen space."
                             )
 
-                        pos_df_f = plot_df_f[plot_df_f['Gross Sales'] > 0]
-                        if not pos_df_f.empty:
-                            total_sales_pos_f = pos_df_f['Gross Sales'].sum()
-                            if total_sales_pos_f > 0:
-                                avg_y_f = (pos_df_f['Gross Profit'].sum() / total_sales_pos_f) * 100
+                        # Calculate true baseline averages for forecast
+                        base_df_f = df_all_details[df_all_details['Period'] == period_to_plot].copy()
+
+                        base_df_f['Y_Val'] = base_df_f[y_val_col_f] * 100
+                        base_df_f['X_Val'] = base_df_f['Gross Sales']
+
+                        if baseline_selector_f == "LOCAL Only":
+                            base_df_f = base_df_f[base_df_f['Market'].astype(str).str.upper() == 'LOCAL']
+                        elif baseline_selector_f == "EXPORT Only":
+                            base_df_f = base_df_f[base_df_f['Market'].astype(str).str.upper() == 'EXPORT']
+
+                        pos_base_f = base_df_f[base_df_f['Gross Sales'] > 0]
+                        if not pos_base_f.empty and pos_base_f['Gross Sales'].sum() > 0:
+                            if margin_selector_f == "Gross Margin":
+                                y_val_abs_base = 'Gross Margin'
+                            elif margin_selector_f == "Gross Profit":
+                                y_val_abs_base = 'Gross Profit'
                             else:
-                                avg_y_f = plot_df_f['Y_Val'].mean() if not plot_df_f.empty else 25.0
+                                y_val_abs_base = 'Contribution Margin'
+
+                            avg_y_f = (pos_base_f[y_val_abs_base].sum() / pos_base_f['Gross Sales'].sum()) * 100
                         else:
-                            avg_y_f = 25.0
+                            avg_y_f = base_df_f['Y_Val'].mean() if not base_df_f.empty else 25.0
 
                         if pd.isna(avg_y_f) or avg_y_f <= 0: avg_y_f = 1.0
 
+                        normal_x_base_f = base_df_f[base_df_f['X_Val'] >= min_outlier_limit_xf]
+                        if not normal_x_base_f.empty:
+                            robust_avg_x_f = normal_x_base_f['X_Val'].mean()
+                        else:
+                            robust_avg_x_f = base_df_f['X_Val'].mean() if not base_df_f.empty else 100.0
+
+                        if pd.isna(robust_avg_x_f) or robust_avg_x_f <= 0: robust_avg_x_f = 100.0
+
                         def_y_low_f = avg_y_f * (2.0 / 3.0)
                         def_y_high_f = avg_y_f * (4.0 / 3.0)
-
-                        normal_x_df_f = plot_df_f[plot_df_f['X_Val'] >= min_outlier_limit_xf]
-                        if not normal_x_df_f.empty:
-                            robust_avg_x_f = normal_x_df_f['X_Val'].mean()
-                        else:
-                            robust_avg_x_f = plot_df_f['X_Val'].mean()
-
-                        if pd.isna(robust_avg_x_f) or robust_avg_x_f <= 0:
-                            robust_avg_x_f = 100.0
-
                         def_x_low_f = robust_avg_x_f * (2.0 / 3.0)
                         def_x_high_f = robust_avg_x_f * (4.0 / 3.0)
 
                         with st.form("forecast_chart_form"):
-                            st.info(
-                                "💡 **INFO:** The X and Y axes use the dynamic Midpoint value as the absolute center point based on your custom Low and High thresholds. The Center lines are marked in Red.")
-
-                            fk_state_str = f"{period_to_plot}_{target_gm_pct}_{cogs_eff_pct}_{min_outlier_limit_xf}"
+                            fk_state_str = f"{period_to_plot}_{market_filter_f}_{target_gm_pct}_{cogs_eff_pct}_{min_outlier_limit_xf}_{margin_selector_f}_{baseline_selector_f}"
                             fk_suffix = hashlib.md5(fk_state_str.encode('utf-8')).hexdigest()
                             step_xf = float(abs(def_x_high_f - def_x_low_f) / 2) if def_x_high_f != def_x_low_f else 1.0
 
@@ -2793,7 +2974,7 @@ def main():
 
                         x_min_raw_f = plot_df_f['X_Val'].min()
                         x_max_raw_f = plot_df_f['X_Val'].max()
-                        x_span_raw_f = x_max_raw_f - x_min_raw_f if x_max_raw_f != x_min_raw_f else avg_x_f
+                        x_span_raw_f = x_max_raw_f - x_min_raw_f if x_max_raw_f != x_min_raw_f else robust_avg_x_f
                         plot_x_min_f = x_min_raw_f - (abs(x_span_raw_f) * 0.05)
                         if x_min_raw_f < 0: plot_x_min_f = x_min_raw_f - (abs(x_span_raw_f) * 0.05)
                         plot_x_max_f = x_max_raw_f + (abs(x_span_raw_f) * 0.05)
@@ -2828,7 +3009,7 @@ def main():
                             color_discrete_map=color_discrete_map_f,
                             hover_name="Product Name",
                             hover_data=hover_data_dict_f,
-                            title=f"Forecast 9-Box Bubble Chart: Gross Margin vs Gross Sales ({period_to_plot}) | Total: {total_items_f} SKUs",
+                            title=f"Forecast 9-Box Bubble Chart: {margin_selector_f} vs Gross Sales ({period_to_plot}) | Total: {total_items_f} SKUs",
                             size_max=60,
                             render_mode="svg"
                         )
@@ -2848,10 +3029,10 @@ def main():
 
                         fig_f.add_vline(x=apply_custom_xf_scale(avg_x_f), line_dash="dot", line_color="red",
                                         line_width=2,
-                                        opacity=0.6, annotation_text=f" ← AVG X ({format_x_val_str_f(avg_x_f)})",
+                                        opacity=0.6, annotation_text=f" ← Center X ({format_x_val_str_f(avg_x_f)})",
                                         annotation_position="top right", annotation_font_color="red")
                         fig_f.add_hline(y=avg_y_f, line_dash="dot", line_color="red", line_width=2, opacity=0.6,
-                                        annotation_text=f"AVG Y ({avg_y_f:.1f}%)", annotation_position="top right",
+                                        annotation_text=f"Center Y ({avg_y_f:.1f}%)", annotation_position="top right",
                                         annotation_font_color="red")
 
                         mapped_plot_x_min_f = apply_custom_xf_scale(plot_x_min_f)
@@ -2918,7 +3099,7 @@ def main():
                             ticktext=[format_x_val_str_f(v) for v in ticks_x_actual_f],
                             title_text="Gross Sales Absolute (IDR)"
                         )
-                        fig_f.update_yaxes(range=[plot_y_min_f, plot_y_max_f], title_text="Gross Margin (%)")
+                        fig_f.update_yaxes(range=[plot_y_min_f, plot_y_max_f], title_text=f"{margin_selector_f} (%)")
 
                         fig_f.update_layout(
                             height=550, hovermode="closest", showlegend=True,
@@ -2931,6 +3112,53 @@ def main():
                             'toImageButtonOptions': {'format': 'png', 'filename': f'Forecast_9Box_{period_to_plot}',
                                                      'height': 800, 'width': 1400, 'scale': 2}
                         })
+
+                        # EXPORT FORECAST 9-BOX DATA
+                        st.markdown("##### 📥 Export Forecast 9-Box Data")
+
+                        export_df_f = plot_df_f.drop(
+                            columns=['Bubble_Size', 'X_Plot', 'Y_Val', 'X_Val', 'Plot_Color_Category'],
+                            errors='ignore').copy()
+
+                        buffer_f_excel = io.BytesIO()
+                        with pd.ExcelWriter(buffer_f_excel, engine='openpyxl') as writer:
+                            export_df_f.to_excel(writer, index=False, sheet_name='Forecast_9Box_Data')
+                            worksheet_f = writer.sheets['Forecast_9Box_Data']
+                            for col in worksheet_f.columns:
+                                max_length = 0
+                                column = col[0].column_letter
+                                for cell in col:
+                                    try:
+                                        if len(str(cell.value)) > max_length:
+                                            max_length = len(str(cell.value))
+                                    except:
+                                        pass
+                                adjusted_width = (max_length + 2)
+                                worksheet_f.column_dimensions[column].width = adjusted_width
+
+                        buffer_f_html = io.StringIO()
+                        fig_f.write_html(buffer_f_html, include_plotlyjs='cdn')
+
+                        col_fdl1, col_fdl2 = st.columns(2)
+                        with col_fdl1:
+                            st.download_button(
+                                label=f"📥 Download {period_to_plot} Forecast Data (Excel)",
+                                data=buffer_f_excel.getvalue(),
+                                file_name=f"Forecast_9Box_{period_to_plot}_{margin_selector_f.replace(' ', '_')}.xlsx",
+                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                type="primary",
+                                use_container_width=True
+                            )
+                        with col_fdl2:
+                            st.download_button(
+                                label="📥 Download Bubble Chart (.html)",
+                                data=buffer_f_html.getvalue(),
+                                file_name=f"Forecast_9Box_{period_to_plot}_{margin_selector_f.replace(' ', '_')}.html",
+                                mime="text/html",
+                                type="secondary",
+                                use_container_width=True
+                            )
+
                     else:
                         st.warning("No data available to render the forecast chart for the selected period.")
 
